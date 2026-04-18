@@ -41,6 +41,8 @@ import (
 	"github.com/amp-labs/connectors/providers/constantcontact"
 	"github.com/amp-labs/connectors/providers/copper"
 	"github.com/amp-labs/connectors/providers/customerapp"
+	"github.com/amp-labs/connectors/providers/cyclraccount"
+	"github.com/amp-labs/connectors/providers/cyclrpartner"
 	"github.com/amp-labs/connectors/providers/devrev"
 	"github.com/amp-labs/connectors/providers/dixa"
 	"github.com/amp-labs/connectors/providers/docusign"
@@ -181,6 +183,8 @@ var connectorConstructors = map[providers.Provider]outputConstructorFunc{ // nol
 	providers.ConstantContact:         wrapper(newConstantContactConnector),
 	providers.Copper:                  wrapper(newCopperConnector),
 	providers.CustomerJourneysApp:     wrapper(newCustomerJourneysAppConnector),
+	providers.CyclrAccount:            wrapper(newCyclrAccountConnector),
+	providers.CyclrPartner:            wrapper(newCyclrPartnerConnector),
 	providers.DevRev:                  wrapper(newDevRevConnector),
 	providers.Dixa:                    wrapper(newDixaConnector),
 	providers.Docusign:                wrapper(newDocusignConnector),
@@ -532,6 +536,18 @@ func newCustomerJourneysAppConnector(
 	return customerapp.NewConnector(
 		customerapp.WithAuthenticatedClient(params.AuthenticatedClient),
 	)
+}
+
+func newCyclrPartnerConnector(
+	params common.ConnectorParams,
+) (*cyclrpartner.Connector, error) {
+	return cyclrpartner.NewConnector(params)
+}
+
+func newCyclrAccountConnector(
+	params common.ConnectorParams,
+) (*cyclraccount.Connector, error) {
+	return cyclraccount.NewConnector(params)
 }
 
 func newConstantContactConnector(
