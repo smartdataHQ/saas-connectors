@@ -168,7 +168,7 @@ See [research.md](./research.md). Decisions summary:
 | Provider | Embeds | Static schemas | Dynamic metadata | Proxy |
 |---|---|---|---|---|
 | `cyclrPartner` | `components.SchemaProvider`, `components.Reader`, `components.Writer`, `components.Deleter` | `providers/cyclrpartner/schemas.json` (accounts, templates, connectors) | No | Yes |
-| `cyclrAccount` | `components.SchemaProvider`, `components.Reader`, `components.Writer`, `components.Deleter` | `providers/cyclraccount/schemas.json` (cycles, accountConnectors, templates[read-only]) | No | Yes |
+| `cyclrAccount` | `components.SchemaProvider`, `components.Reader`, `components.Writer`, `components.Deleter` | `providers/cyclraccount/schemas.json` (cycles, accountConnectors, templates[read-only], cycleSteps, cycleSteps:prerequisites, stepParameters, stepFieldMappings) | No | Yes |
 
 ### Agent context update
 

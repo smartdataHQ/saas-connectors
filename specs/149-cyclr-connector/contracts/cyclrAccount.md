@@ -122,7 +122,7 @@ func init() {
 
 ---
 
-## Object: `accountConnectors` (read-only)
+## Object: `accountConnectors` (read + create)
 
 ### List
 
@@ -134,7 +134,131 @@ func init() {
 - Method: `GET`
 - URL: `/v1.0/account/connectors/{RecordId}`
 
-**Secret hygiene**: if Cyclr returns any fields resembling stored credentials (`AccessToken`, `ApiKey`, `Password`, etc.) in the response, `parseReadResponse` strips them from `Fields` before surfacing the row. `Raw` is left untouched per FR-051, but a `// TODO(security)` is filed upstream to Cyclr if observed.
+### Install (create) — `Write` with empty `RecordId`
+
+- Method: `POST`
+- URL: `/v1.0/connectors/{ConnectorId}/install`
+- Headers: `Authorization: Bearer {token}`, `X-Cyclr-Account: {accountApiId}` (auto-injected), `Content-Type: application/json`
+- Body:
+  ```json
+  {
+    "Name": "Display name for this installation",
+    "Description": "Optional",
+    "AuthValue": "plain-text-key | base64(user:pass) | omit for OAuth"
+  }
+  ```
+- Payload shape accepted by `buildWriteRequest`:
+  ```json
+  {
+    "ConnectorId": "<catalog-connector-uuid>",
+    "Name": "...",
+    "Description": "...",
+    "AuthValue": "..."
+  }
+  ```
+- Behaviour:
+  - `params.RecordData["ConnectorId"]` is extracted and placed in the URL path; it is NOT forwarded in the body.
+  - `Name`, `Description`, `AuthValue` are forwarded in the body.
+  - Response: the new AccountConnector (`Id`, `ConnectorId`, `Name`, `AuthenticationState`, `CreatedOnUtc`).
+  - `WriteResult.RecordId` = response `Id`.
+- **Secret hygiene on create**: the `AuthValue` field is never logged, echoed in errors, or included in telemetry (FR-034). `buildWriteRequest` MUST take care not to include `RecordData` in any error-context surface.
+- **OAuth Connectors**: for OAuth-typed catalog Connectors, the caller omits `AuthValue`. The install call succeeds with `AuthenticationState = "AwaitingAuthentication"`. Completing the OAuth flow (browser redirect via Cyclr's sign-in-token endpoint) is outside this connector's scope — use pass-through or the caller's UI layer.
+
+Update, delete, and authorisation changes on AccountConnectors are NOT part of MVP's typed surface; fall back to pass-through.
+
+**Secret hygiene on read**: if Cyclr returns any fields resembling stored credentials (`AccessToken`, `ApiKey`, `Password`, etc.) in read responses, `parseReadResponse` strips them from `Fields` before surfacing the row. `Raw` is left untouched per FR-051, but a `// TODO(security)` is filed upstream to Cyclr if observed.
+
+---
+
+## Object: `cycleSteps` (read-only)
+
+### Get single by step id — `Read` with `RecordId`
+
+- Method: `GET`
+- URL: `/v1.0/steps/{RecordId}`
+- Response: single Step object per `data-model.md` §CycleStep.
+
+### List steps for a Cycle — parent-scoped path
+
+- Method: `GET`
+- URL: `/v1.0/cycles/{CycleId}/steps?page={page}&per_page=50`
+- Typed surface options (decided at implementation time, revisited at Layer-2):
+  1. **Slash-containing object name**: `cycles/{cycleId}/steps` — caller provides the literal cycleId in the object name. The glob pattern `cycles/*/steps` registers the capability; `buildReadRequest` parses the cycleId out of `params.ObjectName`. This pattern is explicitly supported by this library (CLAUDE.md §Naming; BEST_PRACTICES.md §14).
+  2. **Pass-through deferred**: if (1) proves ergonomically unpleasant at Layer-2, list-by-cycle falls back to pass-through while by-id typed read (above) remains typed.
+- MVP SHOULD ship option 1 unless a concrete ergonomic blocker surfaces.
+
+### Secret hygiene
+
+Step responses may include mapped parameter/field values. If any value field's name matches a credential-shaped heuristic (`AccessToken`, `ApiKey`, `Password`, `Bearer`, `Secret`, `Token`), it is stripped from `Fields` before return. `Raw` is preserved (FR-028, FR-051).
+
+---
+
+## Object: `stepParameters` (read + write)
+
+### List parameters for a Step — parent-scoped path
+
+- Method: `GET`
+- URL: `/v1.0/steps/{stepId}/parameters?page={page}&per_page=50`
+- Object name: `steps/{stepId}/parameters` (glob registration: `steps/*/parameters`)
+- `parseReadResponse`: apply credential-stripping heuristic to the `Value` field before populating `Fields`.
+
+### Get single parameter
+
+- Method: `GET`
+- URL: `/v1.0/steps/{stepId}/parameters/{parameterId}`
+- Addressing: object name `stepParameters`, `RecordId = parameterId`, with `StepId` provided via `RecordData.StepId` on the read call. Layer-2 confirmation: if `common.ReadParams` doesn't support passing auxiliary IDs on read, fall back to compound `RecordId = "{stepId}/{parameterId}"` with `buildReadRequest` parsing the slash.
+
+### Update parameter mapping — `Write`
+
+- Method: `PUT`
+- URL: `/v1.0/steps/{stepId}/parameters/{parameterId}`
+- Headers: `Authorization: Bearer {token}`, `X-Cyclr-Account: {accountApiId}` (auto-injected), `Content-Type: application/json`
+- Payload shape accepted by `buildWriteRequest`:
+  ```json
+  {
+    "StepId": "step-uuid",
+    "MappingType": "StaticValue | ValueList | StepOutput | AccountVariable | <other>",
+    "Value": "...",
+    "SourceStepId": "upstream-step-uuid",
+    "SourceFieldName": "upstream-field-name",
+    "VariableName": "account-variable-name"
+  }
+  ```
+  `RecordId = parameterId`. `StepId` is extracted and placed in the URL path; it is NOT forwarded in the body to Cyclr. Body sent to Cyclr is the mapping shape only:
+  ```json
+  { "MappingType": "StaticValue", "Value": "MyStaticValue" }
+  ```
+  (or the appropriate shape for the chosen `MappingType`).
+- Behaviour:
+  - Unknown `MappingType` values are forwarded uninterpreted (FR-037 — forward-compat).
+  - Response: the updated parameter object; `WriteResult.RecordId` = the parameter's `Id`.
+  - On 422 validation failure (e.g., invalid `Value` for a `ValueList` parameter), Cyclr's `ModelState` is surfaced intact.
+- Secret hygiene: the submitted `Value`, `VariableName`, etc. MUST NOT appear in error messages, log lines, or telemetry (FR-039). `buildWriteRequest` constructs the outbound request without placing `RecordData` into any surface accessible to the error-interpreter's error wrapping.
+
+---
+
+## Object: `stepFieldMappings` (read + write)
+
+Structurally identical to `stepParameters` (same shape, same `MappingType` set, same secret hygiene) but addressed through `/v1.0/steps/{stepId}/fieldmappings/{fieldId}`. All the bullets above apply by substitution of `parameters` → `fieldmappings`. The split exists because Cyclr's API splits them; an MCP generator downstream may choose to present both as a unified "Step inputs" tool group with a `kind` discriminator.
+
+`supportedOperations()` registers both — see the updated registry block below.
+
+---
+
+## Synthetic read: `cycleSteps:prerequisites`
+
+### Request
+
+- Method: `GET`
+- URL: `/v1.0/steps/{RecordId}/prerequisites`
+- `RecordId` carries the Step identifier.
+- Routing: `buildReadRequest` inspects `ObjectName` for the `:prerequisites` suffix, strips it, and routes to the prerequisites URL.
+
+### Response
+
+Shape is Cyclr-defined (an array of prerequisite descriptors). Preserved verbatim in `Raw`; flattened per the standard `ParseResult` into `Fields`. Exact field names confirmed at Layer-2.
+
+No pagination.
 
 ---
 
@@ -150,8 +274,15 @@ Same shape as `cyclrPartner`'s `templates` read surface, but scoped to the templ
 func supportedOperations() components.EndpointRegistryInput {
     return components.EndpointRegistryInput{
         common.ModuleRoot: {
-            {Endpoint: "{cycles,accountConnectors,templates}", Support: components.ReadSupport},
-            {Endpoint: "{cycles,cycles:activate,cycles:deactivate}", Support: components.WriteSupport},
+            // Reads
+            {Endpoint: "{cycles,accountConnectors,templates,cycleSteps,cycleSteps:prerequisites,stepParameters,stepFieldMappings}", Support: components.ReadSupport},
+            // Parent-scoped lists (globs)
+            {Endpoint: "cycles/*/steps", Support: components.ReadSupport},
+            {Endpoint: "steps/*/parameters", Support: components.ReadSupport},
+            {Endpoint: "steps/*/fieldmappings", Support: components.ReadSupport},
+            // Writes
+            {Endpoint: "{cycles,cycles:activate,cycles:deactivate,accountConnectors,stepParameters,stepFieldMappings}", Support: components.WriteSupport},
+            // Deletes
             {Endpoint: "cycles", Support: components.DeleteSupport},
         },
     }
@@ -176,4 +307,4 @@ Additional `statusCodeMapping` consideration: a request with the wrong scope (Pa
 
 ## Metadata
 
-Static `providers/cyclraccount/schemas.json` embedded via `//go:embed`, exposed through `schema.NewOpenAPISchemaProvider`. Covers `cycles`, `accountConnectors`, `templates`.
+Static `providers/cyclraccount/schemas.json` embedded via `//go:embed`, exposed through `schema.NewOpenAPISchemaProvider`. Covers `cycles`, `accountConnectors`, `templates`, `cycleSteps`. Synthetic objects (`cycles:activate`, `cycles:deactivate`, `cycleSteps:prerequisites`, `cycles/*/steps`) share schema with their base object where applicable; the prerequisites synthetic surfaces a small standalone schema for the diagnostic shape.

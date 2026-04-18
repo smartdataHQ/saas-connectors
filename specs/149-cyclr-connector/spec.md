@@ -25,6 +25,7 @@ This feature adds first-class Cyclr support to the `saas-connectors` library so 
 - Q: Should Account suspend/resume (disable without deleting) be in MVP? → A: Yes, include. Suspend and resume are added alongside create/update/delete on the `cyclrPartner` provider. Rationale: "maintain" in the user's ask naturally includes pausing a delinquent or offboarding customer without destroying data, and excluding it would force operators back to the Cyclr Console for a common lifecycle step.
 - Q: What is the concrete retry budget for rate-limit (429) responses from Cyclr? → A: Up to 3 total attempts per caller-visible request. Honor Cyclr's `Retry-After` header when present; otherwise exponential backoff with jitter starting at ~1s (e.g., 1s / 2s / 4s). Wall-clock ceiling ~30 seconds per caller-visible request — if the budget is exhausted, surface the 429 to the caller. Rationale: keeps the gateway's per-request timeout predictable and balances burst tolerance against hiding prolonged outages.
 - Q: Is Cyclr's Data-on-Demand API (invoking an installed Connector method without a Cycle) in scope for MVP, and if so how? → A: Pass-through only. MVP does not expose a typed read/write surface for Data-on-Demand; callers invoke it via `cyclrAccount`'s pass-through surface. Rationale: Data-on-Demand is RPC-over-catalog (per-Connector-method argument schemas), a different paradigm from CRUD on stable resources. Typing it properly requires dynamic per-method schema discovery and would delay the core Account + Cycle lifecycle value. Re-evaluate for typed coverage after MVP.
+- Q (scope-expansion, post-gap-analysis): After peer review against Cyclr's full API surface, should MVP include typed read for Cycle Steps + step Prerequisites, and typed write for installing an AccountConnector? → A: Yes. Add FR-026..028 (Cycle Steps read, step Prerequisites read) and FR-033 (AccountConnector install). Rationale: without Cycle Steps introspection, "operate Cycles" degenerates to install-and-run-unchanged; without Prerequisites, FR-022 ("activate a Cycle") can only fail on the Cyclr side with no way for the caller to diagnose ahead of time; without AccountConnector install, a template whose required Connectors are not yet installed cannot be installed at all without dropping to pass-through. Step-parameter and step-field-mapping *writes* remain pass-through only (configuration-as-code is a much larger surface and can be typed later if demand materialises).
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -62,6 +63,9 @@ As the Partner operator acting on behalf of a specific customer Account, I insta
 3. **Given** an active Cycle, **When** the operator asks the connector to deactivate it, **Then** Cyclr reports the Cycle as inactive and it stops responding to its trigger.
 4. **Given** an existing Account, **When** the operator asks the connector to list its Cycles, **Then** the response includes every installed Cycle with at minimum its identifier, name, and activation state, and supports paging.
 5. **Given** an installed Cycle that is no longer needed, **When** the operator asks the connector to delete it, **Then** Cyclr removes the Cycle from the Account and subsequent reads no longer return it.
+6. **Given** an installed Cycle whose activation has failed or is uncertain, **When** the operator asks the connector to list that Cycle's Steps and, for any Step, read its Prerequisites, **Then** the response identifies which Step parameters or field mappings are missing, or which Connector authentications are awaiting, so the operator can see *why* the Cycle is not ready.
+7. **Given** a template whose required third-party Connectors are not yet installed in the target Account, **When** the operator first installs the missing Connectors into the Account via the connector (providing a name and, where applicable, an authentication value), **Then** each Connector becomes present as an AccountConnector in the Account, and the subsequent template install succeeds.
+8. **Given** an installed Cycle whose Step parameters or field mappings need to be reconfigured (e.g., to point at a different AccountConnector, to change a static value, to re-wire a data flow from a prior Step's output), **When** an operator or MCP agent calls the connector to update the relevant Step parameter or field mapping with a new `MappingType` and value, **Then** the change is persisted on Cyclr and a subsequent read of that parameter/mapping reflects the new value without requiring any Cyclr Console interaction.
 
 ---
 
@@ -113,6 +117,8 @@ As the Partner operator, when I need to call a Cyclr endpoint that is not yet ty
 
 ### Functional Requirements
 
+> **Numbering convention**: FRs are grouped in blocks (010s = Account lifecycle, 020s = Cycle lifecycle + Steps, 030s = Catalog + AccountConnector install, 035+ = Step configuration, 045+ = MCP metadata + taxonomy, 040s = Pass-through, 050s = Library conventions, 060s = Errors). Gaps in numbering (e.g., FR-006..009, FR-019, FR-029, FR-043..044, FR-054..059) are intentional — each block leaves space for future additions without re-numbering. Absence of a specific FR number therefore does not indicate a missing requirement.
+
 #### Authentication & connection
 
 - **FR-001**: The connector MUST authenticate to Cyclr using OAuth 2.0 Client Credentials. No other auth mode is in scope.
@@ -144,12 +150,48 @@ As the Partner operator, when I need to call a Cyclr endpoint that is not yet ty
 - **FR-023**: The connector MUST allow deactivating an installed Cycle by its identifier.
 - **FR-024**: The connector MUST allow deleting an installed Cycle by its identifier.
 - **FR-025**: The connector MUST allow reading a single Cycle by its identifier with at minimum the attributes returned in FR-020.
+- **FR-026**: The connector MUST allow listing the Steps of an installed Cycle (identified by the Cycle's identifier) and reading a single Step by its own identifier. Step reads MUST include at minimum the Step's identifier, name, the Connector/method it calls, and any validation counts (error/warning) if Cyclr exposes them.
+- **FR-027**: The connector MUST allow reading the Prerequisites of a given Step by the Step's identifier. The response MUST identify, at minimum, which Step parameters, field mappings, or authentications are missing or awaiting configuration, so an operator can resolve activation-time failures without opening the Cyclr Console.
+- **FR-028**: Reads of Cycle Steps and Step Prerequisites MUST NOT expose any credential material stored against the Step or its dependent Connector installations (consistent with FR-032, FR-062).
+
+#### Step configuration (for MCP agents and operators)
+
+Cycles installed from templates are runnable only when every Step has its parameters and field mappings correctly populated. These requirements let an MCP agent or operator reconfigure an installed Cycle without opening the Cyclr Console.
+
+- **FR-035**: The connector MUST allow listing the parameters of a given Step (identified by the Step's identifier), returning for each parameter its identifier, name, current mapping type, and current mapped value (or empty when unmapped).
+- **FR-036**: The connector MUST allow reading a single Step parameter addressed by the pair (Step identifier, parameter identifier), with the same fields as the list form.
+- **FR-037**: The connector MUST allow updating a single Step parameter's mapping. The update MUST accept at minimum the following `MappingType` variants: `StaticValue` (with a literal `Value`), `ValueList` (with a `Value` drawn from the parameter's allowed list), `StepOutput` (with `SourceStepId` and `SourceFieldName` referencing an upstream Step's output), and `AccountVariable` (with `VariableName`). Additional mapping types Cyclr supports MUST be passed through uninterpreted rather than rejected.
+- **FR-038**: The connector MUST allow listing, reading, and updating a Step's **field mappings** (the subset of Step inputs attached to the request body, as opposed to parameters attached to headers or URL). The shape and `MappingType` variants MUST match FR-035..037. Field mappings and parameters are distinct Cyclr endpoints but share the same conceptual shape.
+- **FR-039**: Step parameter and field-mapping reads MUST apply the same credential-stripping heuristic as Step reads (FR-028) — values resembling credentials are removed from `Fields` while preserved in `Raw`. Update operations MUST NOT echo the submitted value back in any log, error, or telemetry line.
+
+#### Metadata surface for downstream tool generation (MCP-facing)
+
+The gateway that consumes this library (`fraios/apps/saas-gateway`) generates MCP tool schemas from the connector's `ObjectMetadata` + `FieldMetadata`. Tool ergonomics for agents therefore depend directly on how rich this connector's metadata is. FR-045..048 codify the minimum metadata discipline for this feature.
+
+- **FR-045**: Every object exposed by either provider MUST have a populated `DisplayName` in its `ObjectMetadata`. The DisplayName MUST be short, human-readable, and suitable as an MCP tool title fragment (e.g., `"Cyclr Account"`, `"Cycle Step"`, `"Step Parameter"`).
+- **FR-046**: Every field exposed in `FieldMetadata` MUST have a populated `DisplayName`, a `ValueType` (not empty), and a `ProviderType` matching Cyclr's actual type label for that field. `IsRequired` MUST be set (true/false) for every field used as input on a create or update path. `ReadOnly` MUST be set for fields that cannot be written.
+- **FR-047**: Closed-set fields MUST populate the `Values` enum. At minimum: `Account.Timezone` (IANA list is open-ended and exempt), `Cycle.Status` (`Active`, `Paused`), `Cycle.Interval` (the closed minute set from FR-022's Cyclr contract), `CycleStep.StepType` (`Action`, `Trigger`, `Control`), `AccountConnector.AuthenticationState` (`Authenticated`, `AwaitingAuthentication`), and every `MappingType` field in Step parameters / field mappings.
+- **FR-048**: Lookup / reference fields MUST populate `ReferenceTo` with the object names they reference (e.g., `Cycle.TemplateId.ReferenceTo = ["templates"]`, `CycleStep.CycleId.ReferenceTo = ["cycles"]`, `CycleStep.AccountConnectorId.ReferenceTo = ["accountConnectors"]`). This lets MCP tool generators link related tools together.
+
+#### Object-name taxonomy (MCP tool-grouping convention)
+
+- **FR-049**: Object names MUST follow a stable taxonomy so downstream MCP tool grouping by prefix / suffix is deterministic:
+  - **Account lifecycle**: `accounts`, `accounts:suspend`, `accounts:resume` on `cyclrPartner`.
+  - **Cycle control**: `cycles`, `cycles:activate`, `cycles:deactivate` on `cyclrAccount`.
+  - **Cycle diagnostics**: `cycleSteps`, `cycleSteps:prerequisites`, parent-scoped list `cycles/{cycleId}/steps` on `cyclrAccount`.
+  - **Step configuration**: `stepParameters`, `stepFieldMappings`, parent-scoped lists `steps/{stepId}/parameters` and `steps/{stepId}/fieldmappings` on `cyclrAccount`.
+  - **Connector setup**: `accountConnectors` on `cyclrAccount`.
+  - **Catalog**: `templates`, `connectors` on `cyclrPartner`; `templates` (read-only view) on `cyclrAccount`.
+
+  This taxonomy MUST be stable across minor releases — downstream MCP tool IDs depend on it. Renaming a path is a breaking change for the gateway.
 
 #### Catalog & visibility
 
 - **FR-030**: The connector MUST allow listing Cycle templates visible to the Partner, with paging, returning each template's identifier and name.
 - **FR-031**: The connector MUST allow listing third-party Connectors visible to the Partner or Account (depending on scope), returning each Connector's identifier and name.
 - **FR-032**: The connector MUST allow listing Connector installations present in the scoped Account, returning each installation's identifier, Connector reference, and authorisation state, without exposing stored secrets.
+- **FR-033**: The connector MUST allow installing a third-party Connector from the catalog into the scoped Account, creating a new AccountConnector. The create call MUST accept at minimum a display name, an optional description, and (for API-key or Basic-auth Connectors) an authentication value — the same fields Cyclr's API accepts. For OAuth-backed Connectors, the connector MUST NOT attempt to complete the OAuth dance itself; the typed write MUST succeed on the API-side creation and return an AccountConnector whose authorisation state is "awaiting authorisation", leaving the browser-based OAuth completion to a separate caller-side flow (documented in pass-through / the gateway's responsibility).
+- **FR-034**: The connector MUST NOT accept or forward stored credential material (API keys, basic-auth passwords, OAuth tokens) in any response or log line emitted from AccountConnector reads; only the authorisation state and non-sensitive metadata are surfaced. On create, the caller-supplied authentication value is used only to build the outbound Cyclr request and MUST NOT be echoed back into logs, errors, or telemetry.
 
 #### Pass-through
 
@@ -177,7 +219,11 @@ As the Partner operator, when I need to call a Cyclr endpoint that is not yet ty
 - **Cycle (workflow)**: An executable workflow installed inside an Account. Activation state (active / inactive) is independent of existence. Installed from a Cycle template.
 - **Cycle Template**: A reusable blueprint from which Cycles are instantiated into Accounts. Lives at the Partner level.
 - **Connector (third-party)**: A Cyclr-provided integration with an external SaaS (not to be confused with the `saas-connectors` library itself). Available from the Partner catalog and instantiated as a Connector installation inside an Account.
-- **Connector Installation**: A specific instance of a third-party Connector inside a specific Account, along with its authorisation state.
+- **Connector Installation (AccountConnector)**: A specific instance of a third-party Connector inside a specific Account, along with its authorisation state. Creatable (install) and readable via the typed surface; not updatable or deletable via the typed surface in MVP.
+- **Cycle Step**: A single node within an installed Cycle — represents one action or trigger against a third-party Connector. Read-only via the typed surface in MVP (full write access to step parameters and field mappings is deferred to pass-through).
+- **Step Prerequisites**: A diagnostic view listing the parameters, field mappings, or authentications that a given Step requires but currently lacks, used by callers to diagnose why a Cycle cannot be activated. Read-only.
+- **Step Parameter**: A single configurable input of a Step that is attached to the outbound third-party request as a header or URL component. Each Parameter has a `MappingType` (e.g., `StaticValue`, `ValueList`, `StepOutput`, `AccountVariable`) and a corresponding value. Readable and updatable via the typed surface.
+- **Step Field Mapping**: A single configurable input of a Step that is attached to the outbound third-party request body. Same `MappingType` shape as Step Parameter; distinct Cyclr endpoint. Readable and updatable via the typed surface.
 - **Pass-through Request**: An arbitrary authenticated HTTP call to a path under the configured Cyclr API domain, used for operations not yet covered by the typed surface.
 
 ## Success Criteria *(mandatory)*
@@ -190,8 +236,12 @@ As the Partner operator, when I need to call a Cyclr endpoint that is not yet ty
 - **SC-004**: For every typed operation, at least one credentialed integration test can be executed against a real Cyclr Partner sandbox and passes before release.
 - **SC-005**: 100% of Cyclr API error responses encountered in practice translate to one of the library's typed error categories (no raw HTTP errors reach the gateway's callers).
 - **SC-006**: The pass-through surface successfully proxies at least one Cyclr endpoint that is not part of the typed surface (proving the escape hatch works).
-- **SC-007**: No credential material (client secret, bearer token, Account API ID when treated as sensitive) appears in any log line or error message emitted by the connector under any tested failure mode.
+- **SC-007**: No credential material — specifically the OAuth client secret and the bearer access token — appears in any log line, error message, or telemetry emitted by the connector under any tested failure mode. Account API identifiers are identifiers (not credentials) and MAY appear, per FR-062 and the clarification in the Clarifications section.
 - **SC-008**: Under normal onboarding traffic (one Account + five Cycle installs + five activations, back-to-back), the connector does not trip Cyclr's rate limits.
+- **SC-009**: When a Cycle fails to activate because of incomplete configuration, the operator can determine *which* Step's parameter / field mapping / authentication is missing by reading Step Prerequisites through the connector, without consulting the Cyclr Console.
+- **SC-010**: Installing a template whose required third-party Connectors are not yet installed in the Account succeeds end-to-end through the typed surface — the operator can install each missing Connector into the Account (FR-033), then install the template, without falling back to pass-through.
+- **SC-011**: An MCP agent can reconfigure an installed Cycle by listing its Steps, listing each Step's parameters and field mappings, and updating the mapping values — ending with the Cycle in a state where reading its Prerequisites returns zero missing items — using only the typed surface.
+- **SC-012**: The generated MCP tool surface downstream of this connector presents objects in the **six** coherent tool groups defined in FR-049 (Account lifecycle, Cycle control, Cycle diagnostics, Step configuration, Connector setup, Catalog), derived automatically from the object-name taxonomy. Every generated tool has a non-empty title (derived from `ObjectMetadata.DisplayName`), non-empty argument labels (derived from `FieldMetadata.DisplayName`), and typed arguments (derived from `FieldMetadata.ValueType`) — no unnamed arguments and no untyped arguments reach an MCP agent. (Long-form tool *descriptions* are out of scope at the connector level: Ampersand's `ObjectMetadata` does not yet carry a description field, per research.md §13.)
 
 ## Assumptions
 
@@ -202,6 +252,9 @@ As the Partner operator, when I need to call a Cyclr endpoint that is not yet ty
 - White-label branding assets (custom domains, logos, CSS) are out of scope for the first release; the first release focuses on functional Account + Cycle lifecycle.
 - Webhooks emitted by Cyclr on Cycle errors are consumed by downstream `fraios/saas-gateway` infrastructure, not by this connector. The connector's role is to configure the webhook URL on the Account, not to receive the callbacks.
 - Cyclr's Data-on-Demand API (invoking an installed Connector's methods directly, without a Cycle) is reachable through `cyclrAccount`'s pass-through surface in MVP but is not given a typed read/write surface. Typed coverage is a post-MVP decision contingent on real demand.
+- **Step-level configuration writes** (FR-035..039) ARE in MVP scope because the primary consumer is an MCP agent that must be able to reconfigure Cycles autonomously, not only install-and-run fixed templates. The mapping shape is expressed as a generic `MappingType` + `Value` (+ optional `SourceStepId` / `VariableName` etc. per type) — the connector does not attempt to validate that a given mapping value is accepted by the downstream Connector method (that's Cyclr's job). Agents discover valid mapping values iteratively via reads → Prerequisites → retry.
+- **OAuth Connector authentication completion** (the browser-redirect sign-in-token flow for OAuth-backed third-party Connectors) is not part of this connector's typed surface. FR-033 creates the AccountConnector in "awaiting authorisation" state for OAuth Connectors; completing the OAuth dance belongs to the caller's UI layer and is reachable via pass-through if a server-side trigger is ever needed.
 - The existing `saas-connectors` library conventions (component-based deep connector pattern, `BEST_PRACTICES.md`, `CONTRIBUTING.md` PR-per-capability rule) apply in full to this feature.
 - Pull requests will be split per CONTRIBUTING's recipe — proxy / metadata / read / write / delete as separate PRs — so "ship the connector" is itself a multi-PR outcome.
 - Existing upstream sync discipline (`DOWNSTREAM.md`) holds: this work is a proprietary fork addition and is the only expected divergence introduced by this feature.
+- **MCP ergonomics are the downstream gateway's concern**, but this connector feeds them through its object taxonomy (FR-049) and metadata richness (FR-045..048). The Ampersand library does not have a first-class "tool group" or "progressive disclosure" concept; what we expose here as object names and field metadata is what the gateway's MCP layer turns into agent-facing tools. Naming and metadata discipline in this feature therefore has outsized impact on agent UX downstream.

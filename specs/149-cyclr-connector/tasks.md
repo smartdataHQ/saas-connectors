@@ -28,9 +28,9 @@ Project is a Go library at repo root (`/Users/stefanbaxter/Development/saas-conn
 
 **Purpose**: Introduce both providers at the ProviderInfo level so the catalog, registration, and downstream auth wiring can reference them. Satisfies PRs 1 and 2 of plan.md's sequence.
 
-- [ ] T001 Create `providers/cyclrPartner.go` with `const CyclrPartner Provider = "cyclrPartner"` and `init()` calling `SetInfo` per `contracts/cyclrPartner.md` (OAuth2 client credentials, `BaseURL: "https://{{.apiDomain}}"`, `TokenURL: "https://{{.apiDomain}}/oauth/token"`, `Support.Proxy: true`, `Metadata.Input` with `apiDomain`). No other Support flags set yet.
-- [ ] T002 [P] Create `providers/cyclrAccount.go` with `const CyclrAccount Provider = "cyclrAccount"` and `init()` calling `SetInfo` per `contracts/cyclrAccount.md` (OAuth2 client credentials, `ExplicitScopesRequired: true`, same BaseURL/TokenURL, `Support.Proxy: true`, `Metadata.Input` with `apiDomain` and `accountApiId`).
-- [ ] T003 [P] Run `make lint` and `go build ./...` after T001+T002 to confirm the two ProviderInfo entries compile and pass linters. (No dedicated file — validation step, recorded as a task for traceability.)
+- [X] T001 Create `providers/cyclrPartner.go` with `const CyclrPartner Provider = "cyclrPartner"` and `init()` calling `SetInfo` per `contracts/cyclrPartner.md` (OAuth2 client credentials, `BaseURL: "https://{{.apiDomain}}"`, `TokenURL: "https://{{.apiDomain}}/oauth/token"`, `Support.Proxy: true`, `Metadata.Input` with `apiDomain`). No other Support flags set yet.
+- [X] T002 [P] Create `providers/cyclrAccount.go` with `const CyclrAccount Provider = "cyclrAccount"` and `init()` calling `SetInfo` per `contracts/cyclrAccount.md` (OAuth2 client credentials, `ExplicitScopesRequired: true`, same BaseURL/TokenURL, `Support.Proxy: true`, `Metadata.Input` with `apiDomain` and `accountApiId`).
+- [X] T003 [P] Run `make lint` and `go build ./...` after T001+T002 to confirm the two ProviderInfo entries compile and pass linters. (No dedicated file — validation step, recorded as a task for traceability.)
 
 **Checkpoint**: Proxy passthrough is functional for both providers via the gateway's `generic.NewConnector` fallback. PR 1 and PR 2 from plan.md can merge.
 
@@ -44,7 +44,7 @@ Project is a Go library at repo root (`/Users/stefanbaxter/Development/saas-conn
 
 - [ ] T004 Create `providers/cyclrpartner/connector.go` with `type Connector struct { *components.Connector; common.RequireAuthenticatedClient; components.SchemaProvider; components.Reader; components.Writer; components.Deleter }`, `NewConnector(params)` calling `components.Initialize(providers.CyclrPartner, params, constructor)`, and a minimal `constructor` that wires only the error handler and endpoint registry (SchemaProvider/Reader/Writer/Deleter left as TODO comments to be filled per-story).
 - [ ] T005 [P] Create `providers/cyclraccount/connector.go` with the same struct shape plus an `accountHeaderTransport` that implements `http.RoundTripper` and `Set`s `X-Cyclr-Account: {accountApiId}` on every outbound request (per research §9). Extract `accountApiId` from `ProviderContext` in `constructor`; wrap `base.HTTPClient().Client.Transport` before any handler wiring.
-- [ ] T006 [P] Create `providers/cyclrpartner/errors.go` with `errorFormats` (single `FormatTemplate` matching `.NET`-style bodies: `Message`, optional `ExceptionMessage`, optional `ModelState`) and `statusCodeMapping` (401→`ErrAccessToken`, 403→`ErrRetryable` or `ErrCaller` per existing conventions, 404→`ErrObjectNotFound`, 422→`ErrBadRequest`, 429→`ErrRetryable` equivalent). Follow the `ResponseError.CombineErr` pattern from research §6.
+- [ ] T006 [P] Create `providers/cyclrpartner/errors.go` with `errorFormats` (single `FormatTemplate` matching `.NET`-style bodies: `Message`, optional `ExceptionMessage`, optional `ModelState`) and `statusCodeMapping` (401→`ErrAccessToken`, 403→`ErrRetryable` or `ErrCaller` per existing conventions, 404→`ErrObjectNotFound`, 422→`ErrBadRequest`, 429→`ErrRetryable` equivalent). Follow the `ResponseError.CombineErr` pattern from research §6. Include scope-mismatch detection symmetric to T007: if the `Message` field on a 401/403 contains a Cyclr-specific indicator that an **Account-scoped token** is being used against Partner-level endpoints, wrap with a clear scope-mismatch error per FR-005.
 - [ ] T007 [P] Create `providers/cyclraccount/errors.go` with the same pattern as T006 plus scope-mismatch detection: if the `Message` field contains an indicator of wrong-scope credentials, wrap with a specific scope-mismatch error per FR-005.
 - [ ] T008 [P] Create `providers/cyclrpartner/url.go` exposing `buildURL(params ...string) (*urlbuilder.URL, error)` that composes `BaseURL + apiVersion + path`. Export `const apiVersion = "v1.0"` at package scope.
 - [ ] T009 [P] Create `providers/cyclraccount/url.go` exposing the same `buildURL` helper and `const apiVersion = "v1.0"`.
@@ -145,12 +145,48 @@ Project is a Go library at repo root (`/Users/stefanbaxter/Development/saas-conn
 - [ ] T047 [US2] In `providers/cyclraccount/handlers.go`, implement `buildDeleteRequest` and `parseDeleteResponse` for `cycles` (DELETE `/v1.0/cycles/{RecordId}`).
 - [ ] T048 [P] [US2] Create `providers/cyclraccount/delete_test.go` for `cycles` delete success and delete-refused paths.
 
+### Cycle Step introspection (FR-026, FR-027, FR-028)
+
+- [ ] T049 [US2] Extend `providers/cyclraccount/schemas.json` with `cycleSteps` entry (Id, Name, CycleId, ConnectorId, AccountConnectorId, MethodName, StepType, ErrorCount, WarningCount) per `data-model.md` §CycleStep. Also add a minimal `cycleSteps:prerequisites` entry.
+- [ ] T050 [US2] Extend `providers/cyclraccount/supports.go` to declare `cycleSteps`, `cycleSteps:prerequisites`, and the parent-scoped pattern `cycles/*/steps` all with `ReadSupport`.
+- [ ] T051 [US2] Extend `providers/cyclraccount/handlers.go` `buildReadRequest` to route:
+  - `cycleSteps` with `RecordId` → `GET /v1.0/steps/{RecordId}`
+  - `cycleSteps:prerequisites` with `RecordId` → `GET /v1.0/steps/{RecordId}/prerequisites`
+  - object name matching `cycles/{cycleId}/steps` → `GET /v1.0/cycles/{cycleId}/steps?page=...&per_page=50`, parsing `cycleId` from the object name.
+- [ ] T052 [US2] Extend `parseReadResponse` for the three new object shapes. For `cycleSteps` and the parent-scoped list, apply the credential-stripping heuristic on mapped parameter/field values before populating `Fields` (FR-028); preserve `Raw`. For `:prerequisites` surface Cyclr's response verbatim into `Fields`.
+- [ ] T053 [P] [US2] Extend `providers/cyclraccount/read_test.go` with mock cases: list steps for a cycle (parent-scoped name), read single step by id, read step prerequisites (populated + empty array), credential-shaped field present in response is absent from `Fields` and present in `Raw`.
+
+### Step configuration — parameters + field mappings (FR-035..039)
+
+- [ ] T053a [US2] Extend `providers/cyclraccount/schemas.json` with `stepParameters` and `stepFieldMappings` entries (shared shape: `Id`, `StepId`, `Name`, `MappingType` with `Values` enum, `Value`, `SourceStepId`, `SourceFieldName`, `VariableName`, `AllowedValues`). Populate `DisplayName`, `ProviderType`, `ValueType`, `IsRequired`, `ReadOnly` on every field (FR-046). Populate `ReferenceTo` on `StepId`, `SourceStepId`, `VariableName` (→ account variables) per FR-048.
+- [ ] T053b [US2] Extend `providers/cyclraccount/supports.go` to declare `stepParameters` and `stepFieldMappings` with `ReadSupport + WriteSupport`, plus parent-scoped globs `steps/*/parameters` and `steps/*/fieldmappings` with `ReadSupport`.
+- [ ] T053c [US2] Extend `providers/cyclraccount/handlers.go` `buildReadRequest` to route:
+  - `steps/{stepId}/parameters` → `GET /v1.0/steps/{stepId}/parameters?page=...&per_page=50`
+  - `stepParameters` with `RecordId` → `GET /v1.0/steps/{stepId}/parameters/{parameterId}` using `StepId` from `RecordData.StepId` or compound `RecordId` fallback (Layer-2 confirmed)
+  - `steps/{stepId}/fieldmappings` → `GET /v1.0/steps/{stepId}/fieldmappings` (same shape)
+  - `stepFieldMappings` with `RecordId` → `GET /v1.0/steps/{stepId}/fieldmappings/{fieldId}`
+- [ ] T053d [US2] Extend `parseReadResponse` for the four new read paths. Apply credential-stripping heuristic on `Value` (FR-039). Preserve `Raw`.
+- [ ] T053e [US2] Extend `providers/cyclraccount/handlers.go` `buildWriteRequest` to route `stepParameters` updates: PUT `/v1.0/steps/{stepId}/parameters/{parameterId}`. Extract `StepId` from `RecordData`, place in URL path, forward only the mapping fields (`MappingType`, `Value`, `SourceStepId`, `SourceFieldName`, `VariableName`) in the body. Unknown `MappingType` values pass through uninterpreted (FR-037).
+- [ ] T053f [US2] Extend `buildWriteRequest` for `stepFieldMappings` — analogous to T053e, PUT `/v1.0/steps/{stepId}/fieldmappings/{fieldId}`.
+- [ ] T053g [US2] Extend `parseWriteResponse` for both — return `WriteResult{Success: true, RecordId: response.Id}`. Ensure `AuthValue`-style secrets in the submitted body do NOT appear in error context.
+- [ ] T053h [P] [US2] Extend `providers/cyclraccount/read_test.go` with cases: list parameters for a step, read single parameter by step+id, parameter response with credential-shaped `Value` stripped in `Fields` and preserved in `Raw`, same four cases for field mappings.
+- [ ] T053i [P] [US2] Extend `providers/cyclraccount/write_test.go` with cases: update parameter to `StaticValue` / `ValueList` / `StepOutput` / `AccountVariable`, 422 with `ModelState` populated, unknown `MappingType` accepted and forwarded, secret-shaped submitted values absent from error strings.
+
+### AccountConnector install (FR-033, FR-034)
+
+- [ ] T054 [US2] Extend `providers/cyclraccount/schemas.json` with `accountConnectors` (read fields + create-only fields: `Name`, `Description`, `AuthValue`, `ConnectorId`). Populate full metadata per FR-045..048.
+- [ ] T055 [US2] Extend `providers/cyclraccount/supports.go` to declare `accountConnectors` with `ReadSupport + WriteSupport` (no delete in MVP).
+- [ ] T056 [US2] Extend `providers/cyclraccount/handlers.go` `buildReadRequest` to route `accountConnectors` list (`GET /v1.0/account/connectors`) and by-id (`GET /v1.0/account/connectors/{RecordId}`). Apply credential-stripping heuristic to response fields.
+- [ ] T057 [US2] Extend `providers/cyclraccount/handlers.go` `buildWriteRequest` to route `accountConnectors` install: extract `ConnectorId` from `RecordData`, `POST /v1.0/connectors/{ConnectorId}/install` with body `{Name, Description, AuthValue}`. Ensure `AuthValue` never appears in error context or log fields in this code path (FR-034).
+- [ ] T058 [US2] Extend `parseWriteResponse` for `accountConnectors` — return `WriteResult{Success: true, RecordId: response.Id}`.
+- [ ] T059 [P] [US2] Extend `providers/cyclraccount/write_test.go` with cases: install API-key Connector (Authenticated state), install OAuth Connector (AwaitingAuthentication state, `AuthValue` omitted), verify that a failing install's error message does NOT contain the supplied `AuthValue`.
+
 ### Layer-2 integration entrypoints
 
-- [ ] T049 [P] [US2] Create `test/cyclrAccount/metadata/main.go`.
-- [ ] T050 [P] [US2] Create `test/cyclrAccount/read/main.go` — lists cycles and reads the first by `Id`.
-- [ ] T051 [P] [US2] Create `test/cyclrAccount/write/main.go` — installs a known-good template (id from env var `CYCLR_TEST_TEMPLATE_ID`), activates with `Interval: 60`, deactivates.
-- [ ] T052 [P] [US2] Create `test/cyclrAccount/delete/main.go` — deletes the Cycle created by T051.
+- [ ] T060 [P] [US2] Create `test/cyclrAccount/metadata/main.go`.
+- [ ] T061 [P] [US2] Create `test/cyclrAccount/read/main.go` — lists cycles, reads the first by `Id`, lists its Steps via `cycles/{id}/steps`, reads one Step's prerequisites.
+- [ ] T062 [P] [US2] Create `test/cyclrAccount/write/main.go` — ensures an API-key Connector is installed via `accountConnectors` (if missing), installs a template dependent on it, lists the resulting Cycle's Steps, picks one Step parameter, updates its mapping (`MappingType: StaticValue` with a test value), re-reads to confirm the update persisted, activates the resulting Cycle with `Interval: 60`, deactivates. This single flow exercises FR-020..038 against a real Cyclr sandbox.
+- [ ] T063 [P] [US2] Create `test/cyclrAccount/delete/main.go` — deletes the Cycle created by T062.
 
 **Checkpoint**: User Stories 1 AND 2 both independently functional. `go test ./providers/cyclr{partner,account}/... && make lint` green.
 
@@ -164,27 +200,28 @@ Project is a Go library at repo root (`/Users/stefanbaxter/Development/saas-conn
 
 **Corresponds to PRs**: extends PR 3/4 (Metadata) and PR 5/6 (Read) with additional object types. Can ship as follow-up PRs after US1/US2 merge if sequencing demands.
 
+> Note: `accountConnectors` (read + install) is part of User Story 2 (tasks T054–T059) because the install capability is a prerequisite to Story 2's template-install flow. Story 3 here covers only the remaining read-only discoverability surface: templates + catalog Connectors on the Partner side, plus the Account-side templates view.
+
 ### `cyclrPartner` extensions
 
-- [ ] T053 [US3] Extend `providers/cyclrpartner/schemas.json` with `templates` and `connectors` object entries per `data-model.md` §Template and §Connector.
-- [ ] T054 [US3] Update `providers/cyclrpartner/supports.go` to declare `templates` and `connectors` with `ReadSupport` only.
-- [ ] T055 [US3] Extend `providers/cyclrpartner/handlers.go` `buildReadRequest` to route `templates` and `connectors` to `/v1.0/templates` and `/v1.0/connectors` respectively (plus by-id variants).
-- [ ] T056 [US3] Extend `parseReadResponse` for `templates` and `connectors` — may share pagination machinery with `accounts` via a small helper.
-- [ ] T057 [P] [US3] Extend `providers/cyclrpartner/read_test.go` with mock cases for listing `templates` and `connectors`.
-- [ ] T058 [P] [US3] Extend `providers/cyclrpartner/metadata_test.go` with coverage for `templates` and `connectors` schemas.
+- [ ] T064 [US3] Extend `providers/cyclrpartner/schemas.json` with `templates` and `connectors` object entries per `data-model.md` §Template and §Connector.
+- [ ] T065 [US3] Update `providers/cyclrpartner/supports.go` to declare `templates` and `connectors` with `ReadSupport` only.
+- [ ] T066 [US3] Extend `providers/cyclrpartner/handlers.go` `buildReadRequest` to route `templates` and `connectors` to `/v1.0/templates` and `/v1.0/connectors` respectively (plus by-id variants).
+- [ ] T067 [US3] Extend `parseReadResponse` for `templates` and `connectors` — share pagination machinery with `accounts` via a small helper if the shape matches.
+- [ ] T068 [P] [US3] Extend `providers/cyclrpartner/read_test.go` with mock cases for listing `templates` and `connectors` (first page, last page, empty).
+- [ ] T069 [P] [US3] Extend `providers/cyclrpartner/metadata_test.go` with coverage for `templates` and `connectors` schemas.
 
-### `cyclrAccount` extensions
+### `cyclrAccount` extensions (templates-only; accountConnectors is in US2)
 
-- [ ] T059 [US3] Extend `providers/cyclraccount/schemas.json` with `accountConnectors` (includes `AuthenticationState`) and `templates` (read-only view) entries.
-- [ ] T060 [US3] Update `providers/cyclraccount/supports.go` to declare `accountConnectors` and `templates` with `ReadSupport` only.
-- [ ] T061 [US3] Extend `providers/cyclraccount/handlers.go` `buildReadRequest` to route `accountConnectors` to `/v1.0/account/connectors` (exact path confirmed at Layer-2 per research §12.5) and `templates` to `/v1.0/templates` (or Account-scoped variant if Layer-2 reveals a different path).
-- [ ] T062 [US3] Extend `parseReadResponse` for `accountConnectors` to **strip any field that looks like credential material** (`AccessToken`, `ApiKey`, `Password`, etc.) from `Fields` before returning the row, while leaving `Raw` untouched (per `data-model.md` §Secret handling recap).
-- [ ] T063 [P] [US3] Extend `providers/cyclraccount/read_test.go` with cases for `accountConnectors` including a fixture that contains a pseudo-credential field — assert it is absent from `Fields` and present in `Raw`.
+- [ ] T070 [US3] Extend `providers/cyclraccount/schemas.json` with a `templates` (read-only view) entry.
+- [ ] T071 [US3] Update `providers/cyclraccount/supports.go` to declare `templates` with `ReadSupport` only.
+- [ ] T072 [US3] Extend `providers/cyclraccount/handlers.go` `buildReadRequest` to route `templates` to `/v1.0/templates` (or Account-scoped variant if Layer-2 reveals a different path).
+- [ ] T073 [P] [US3] Extend `providers/cyclraccount/read_test.go` with cases for listing and reading `templates` in Account scope.
 
 ### Layer-2 entrypoints
 
-- [ ] T064 [P] [US3] Update `test/cyclrPartner/read/main.go` to additionally list `templates` and `connectors`.
-- [ ] T065 [P] [US3] Update `test/cyclrAccount/read/main.go` to additionally list `accountConnectors` and `templates`.
+- [ ] T074 [P] [US3] Update `test/cyclrPartner/read/main.go` to additionally list `templates` and `connectors`.
+- [ ] T075 [P] [US3] Update `test/cyclrAccount/read/main.go` to additionally list `templates` (accountConnectors was added in US2's T061).
 
 **Checkpoint**: User Story 3 complete; catalog discovery enables all of US1 and US2's ID inputs without Console use.
 
@@ -198,9 +235,9 @@ Project is a Go library at repo root (`/Users/stefanbaxter/Development/saas-conn
 
 **Independent Test**: Issue a raw HTTP call via the gateway's `/v1/proxy` endpoint to a Cyclr path not in the typed surface (e.g., `GET /v1.0/account/variables`) and receive Cyclr's response verbatim.
 
-- [ ] T066 [US4] Add a test in `providers/cyclraccount/connector_test.go` (new file) asserting the `accountHeaderTransport` **overrides** any caller-set `X-Cyclr-Account` value (FR-042). Construct an `http.Request` with a forged header, pass it through the transport, confirm the header value equals the connection's `accountApiId` after round-trip.
-- [ ] T067 [P] [US4] Add a test in `providers/cyclraccount/connector_test.go` asserting that requests to hosts **outside** the configured `apiDomain` are refused (FR-041). This may require small refactor: if the transport currently forwards any host, add a host-allowlist check.
-- [ ] T068 [P] [US4] Manual (or scripted) verification step using the dev proxy: `go run scripts/proxy/proxy.go` with `cyclrPartner` creds, issue `GET /v1.0/accounts` via `localhost:4444`, confirm a valid response. Repeat for `cyclrAccount` with an endpoint not in the typed surface (e.g., `/v1.0/account/variables`). Record results in quickstart.md `Smoke test flow` or a short PR-description paragraph.
+- [ ] T076 [US4] Add a test in `providers/cyclraccount/connector_test.go` (new file) asserting the `accountHeaderTransport` **overrides** any caller-set `X-Cyclr-Account` value (FR-042). Construct an `http.Request` with a forged header, pass it through the transport, confirm the header value equals the connection's `accountApiId` after round-trip.
+- [ ] T077 [P] [US4] Add a test in `providers/cyclraccount/connector_test.go` asserting that requests to hosts **outside** the configured `apiDomain` are refused (FR-041). This may require a small refactor: if the transport currently forwards any host, add a host-allowlist check.
+- [ ] T078 [P] [US4] Manual (or scripted) verification step using the dev proxy: `go run scripts/proxy/proxy.go` with `cyclrPartner` creds, issue `GET /v1.0/accounts` via `localhost:4444`, confirm a valid response. Repeat for `cyclrAccount` with an endpoint not in the typed surface (e.g., `/v1.0/account/variables` — Account Variables, explicit MVP-out-of-scope per Assumptions). Record results in quickstart.md `Smoke test flow` or a short PR-description paragraph.
 
 **Checkpoint**: All four user stories complete and independently verifiable. Fork is now feature-complete for MVP; downstream gateway bump can proceed.
 
@@ -210,13 +247,17 @@ Project is a Go library at repo root (`/Users/stefanbaxter/Development/saas-conn
 
 **Purpose**: Repo-wide hygiene, real-API validation, docs alignment. None of these block any user story, but all must be green before the final downstream gateway bump.
 
-- [ ] T069 [P] Run `make test-parallel` to flake-check the new mock-based tests. Any intermittent failure is a bug, not acceptable.
-- [ ] T070 [P] Run the complete Layer-2 sequence (`test/cyclrPartner/*` then `test/cyclrAccount/*`) against a real Cyclr Partner sandbox. Record any deviations from research §12 open items (pagination header names, suspend/resume paths, delete cascade behaviour, template-listing path). File small follow-up PRs for each.
-- [ ] T071 [P] Update `BEST_PRACTICES.md` if any Cyclr-specific pattern emerged that's worth promoting as a general best practice (e.g., transport-level header injection). Only if the pattern generalizes — do not pollute with provider-specifics.
-- [ ] T072 Update `specs/149-cyclr-connector/quickstart.md` with any amendments uncovered during Layer-2 runs (actual pagination header names, any surprise Cyclr behaviours).
-- [ ] T073 Regenerate any `//go:generate` outputs touched by the new providers (if any — currently none expected, but run `go generate ./providers/...` to confirm).
-- [ ] T074 Final `make lint && go test ./... -count=1 && go build ./...` pass across the whole repo to confirm no regression outside the new packages.
-- [ ] T075 Prepare the downstream gateway bump documentation: add a short section to a tracking issue or PR body noting the `go get github.com/amp-labs/connectors@<sha>` command and which cxs2 credential fields are now consumed (`apiDomain`, `accountApiId`, `clientId`, `clientSecret`, `scopes`).
+- [ ] T078a [P] [US4] **FR-002 host-allowlist check.** Add a grep-driven test (or static check in `providers/cyclr{partner,account}/connector_test.go`) asserting that every `http.NewRequest` / `http.NewRequestWithContext` call inside the two packages derives its URL from `c.ProviderInfo().BaseURL` (i.e., starts with `https://{apiDomain}`). Closes the gap where FR-002's "refuse to call any host outside the configured domain" was only enforced for pass-through (T077) and not for typed handlers. Fail the test if any handler hard-codes a literal Cyclr host.
+- [ ] T078b [P] [US4] **FR-062 credential-in-error check.** Add a test under `providers/cyclr{partner,account}/errors_test.go` that feeds an error response whose body happens to contain strings resembling credential material (`access_token`, `client_secret`, `Bearer xyz`) and asserts the wrapped error's `Error()` string does not contain them verbatim. Covers the broad FR-062 enforcement at the interpreter layer, complementing the narrower write-side checks in T059 and T053i.
+- [ ] T079 [P] Run `make test-parallel` to flake-check the new mock-based tests. Any intermittent failure is a bug, not acceptable.
+- [ ] T080 [P] Run the complete Layer-2 sequence (`test/cyclrPartner/*` then `test/cyclrAccount/*`) against a real Cyclr Partner sandbox. Record any deviations from research §12 open items (pagination header names, suspend/resume paths, delete cascade behaviour, template-listing path, prerequisites response shape, AccountConnector install response fields). File small follow-up PRs for each.
+- [ ] T081 [P] Update `BEST_PRACTICES.md` if any Cyclr-specific pattern emerged that's worth promoting as a general best practice (e.g., transport-level header injection, credential-field stripping heuristic). Only if the pattern generalizes — do not pollute with provider-specifics.
+- [ ] T082 Update `specs/149-cyclr-connector/quickstart.md` with any amendments uncovered during Layer-2 runs (actual pagination header names, any surprise Cyclr behaviours, how the `cycles/{id}/steps` pattern actually feels in practice).
+- [ ] T083 Regenerate any `//go:generate` outputs touched by the new providers (if any — currently none expected, but run `go generate ./providers/...` to confirm).
+- [ ] T084 Final `make lint && go test ./... -count=1 && go build ./...` pass across the whole repo to confirm no regression outside the new packages.
+- [ ] T085 Prepare the downstream gateway bump documentation: short section in a tracking issue or PR body noting the `go get github.com/amp-labs/connectors@<sha>` command, the cxs2 credential fields now consumed (`apiDomain`, `accountApiId`, `clientId`, `clientSecret`, `scopes`), and the new object names the gateway's proto layer must accept (`accountConnectors`, `cycleSteps`, `cycleSteps:prerequisites`, `cycles/*/steps`, `stepParameters`, `stepFieldMappings`, `steps/*/parameters`, `steps/*/fieldmappings`).
+- [ ] T086 **MCP metadata audit** (FR-045..048) — before merging PR 4/6/8, audit both `providers/cyclrpartner/schemas.json` and `providers/cyclraccount/schemas.json`: every object has `DisplayName`; every field has `DisplayName`, `ValueType`, `ProviderType`, `IsRequired` (set true/false, never null), `ReadOnly` (set for un-writable fields); every closed-set field (`Status`, `Interval`, `StepType`, `AuthenticationState`, `MappingType`) has `Values` populated; every lookup field (`TemplateId`, `CycleId`, `StepId`, `ConnectorId`, `AccountConnectorId`) has `ReferenceTo` populated. Produce a short compliance matrix in the PR description showing each object's completeness.
+- [ ] T087 **Object-name taxonomy check** (FR-049) — grep across the two packages' `supports.go` files and assert every registered name fits the five-group taxonomy from FR-049. New names introduced outside the taxonomy fail the check and require either renaming or an explicit taxonomy extension.
 
 ---
 
@@ -272,7 +313,7 @@ Task: T029 "Create providers/cyclrpartner/delete_test.go"
 Task: T030-T033 "Create test/cyclrPartner/{metadata,read,write,delete}/main.go"
 ```
 
-But T021-T028 (all editing `providers/cyclrpartner/handlers.go`) must be sequential.
+But the handler-authoring tasks — T021, T022, T024, T025, T026, and T028 — all edit `providers/cyclrpartner/handlers.go` and must therefore be sequential. T023, T027, and T029 are test-file tasks and can overlap with the handler work (different files).
 
 ---
 
@@ -330,10 +371,10 @@ With two developers:
 | Phase 1 — Setup | 3 | T001–T003. Delivers PRs 1 & 2 (proxy). |
 | Phase 2 — Foundational | 12 | T004–T015. Delivers package skeletons + registration. |
 | Phase 3 — US1 Account lifecycle | 18 | T016–T033. Delivers PRs 3, 5, 7, partial PR 9. |
-| Phase 4 — US2 Cycle lifecycle | 19 | T034–T052. Delivers PRs 4, 6, 8, partial PR 9. |
-| Phase 5 — US3 Catalog & visibility | 13 | T053–T065. Extends Phase 3 and Phase 4. |
-| Phase 6 — US4 Pass-through verification | 3 | T066–T068. Mostly tests. |
-| Phase 7 — Polish | 7 | T069–T075. Cross-cutting. |
-| **Total** | **75** | |
+| Phase 4 — US2 Cycle lifecycle + Steps + Step-config writes + Connector install | 39 | T034–T063 plus T053a..T053i. Delivers PRs 4, 6, 8, partial PR 9 — Cycle lifecycle, Step introspection + Prerequisites (FR-026..028), Step parameter / field-mapping read+write (FR-035..039), AccountConnector install (FR-033..034). |
+| Phase 5 — US3 Catalog & visibility | 12 | T064–T075. Extends Phase 3 and Phase 4 with templates + Connector catalog reads. `accountConnectors` moved to US2 — no longer in this phase. |
+| Phase 6 — US4 Pass-through verification | 5 | T076–T078 plus T078a (FR-002 host-allowlist check) and T078b (FR-062 credential-in-error check) — both added from the speckit-analyze coverage-gap findings. |
+| Phase 7 — Polish | 9 | T079–T087. Cross-cutting — includes the FR-045..048 metadata audit (T086) and the FR-049 taxonomy check (T087). |
+| **Total** | **98** | 96 numbered slots + 2 lettered additions (T078a, T078b). Counted including T053a..T053i (9 lettered sub-tasks). |
 
-**MVP scope recommendation**: Phase 1 + Phase 2 + Phase 3 (33 tasks). Delivers FR-001..018, FR-050..062 (for Partner scope), and US1 end-to-end.
+**MVP scope recommendation**: Phase 1 + Phase 2 + Phase 3 (33 tasks). Delivers FR-001..018, FR-050..062 (Partner scope), US1 end-to-end. Skipping US2 means no Cycle lifecycle — gateway can white-label Accounts but cannot operate them. Add Phase 4 (30 tasks) to reach the full P1 scope for both user stories.

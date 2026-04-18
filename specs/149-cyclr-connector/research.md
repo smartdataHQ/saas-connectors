@@ -248,10 +248,55 @@ func (t *accountHeaderTransport) RoundTrip(req *http.Request) (*http.Response, e
 | Object | Read | Create | Update | Delete | Notes |
 |---|---|---|---|---|---|
 | `cycles` | ✓ | ✓ (via `/templates/{id}/install`) | — | ✓ | Activate/deactivate are synthetic write targets — see contracts. |
-| `accountConnectors` | ✓ | — | — | — | Installed Connector instances in this Account. No secrets exposed (FR-032). |
+| `accountConnectors` | ✓ | ✓ (via `/connectors/{id}/install`) | — | — | Installed Connector instances in this Account. No secrets exposed (FR-032). Create supports API-key / Basic / OAuth (OAuth completes "awaiting" — see FR-033). |
 | `templates` | ✓ | — | — | — | Read-only view of templates visible to this Account's Partner. |
+| `cycleSteps` | ✓ (by id + parent-scoped list) | — | — | — | Step introspection for installed Cycles. List via `cycles/{cycleId}/steps` pattern. |
+| `cycleSteps:prerequisites` | ✓ (synthetic, by step id) | — | — | — | Diagnostic: which mappings / authentications are missing for a Step. |
+| `stepParameters` | ✓ (by id + parent-scoped list `steps/{stepId}/parameters`) | — | ✓ | — | Update Step parameter mapping (MappingType + value). MCP agent-writable. |
+| `stepFieldMappings` | ✓ (by id + parent-scoped list `steps/{stepId}/fieldmappings`) | — | ✓ | — | Update Step field-mapping. Structurally identical to `stepParameters`; split because Cyclr's API splits them. |
 
-Post-MVP candidates (not in first release): `cycleSteps`, `cycleRuns`, `transactions`, `accountConnectorFields`, `accountVariables`.
+Post-MVP candidates (not in first release): `cycleRuns`, `transactions`, `accountConnectorFields`, `accountVariables`.
+
+---
+
+## §13. MCP-facing design — what the connector contributes
+
+**Decision**: The connector is designed to make the downstream gateway's MCP tool generator produce well-grouped, well-described tools **without the gateway needing Cyclr-specific knowledge**. The mechanisms are all standard Ampersand surfaces.
+
+### Facts
+
+1. Ampersand's library has no first-class "tool group" or "progressive disclosure" concept. See `common/types.go:635-716` — `ObjectMetadata` has `DisplayName + Fields`; `FieldMetadata` has `DisplayName + ValueType + ProviderType + ReadOnly + IsCustom + IsRequired + Values + ReferenceTo`. That's the whole metadata surface.
+2. The gateway (`fraios/apps/saas-gateway`) turns these into MCP tools. How it groups, describes, and discloses tools is its concern.
+3. But the gateway can only generate quality tools if the connector populates metadata faithfully.
+
+### How this connector helps the gateway
+
+- **Object taxonomy (FR-049)**: stable, prefix/suffix-structured names so the gateway can group by convention without a per-provider mapping. The five groups (Account lifecycle, Cycle control, Cycle diagnostics, Step configuration, Connector setup, Catalog) are encoded in the names themselves.
+- **Rich `FieldMetadata` (FR-045..048)**: every field has `DisplayName`, `ValueType`, `ProviderType`, `IsRequired`, `ReadOnly`; enum fields have `Values`; lookup fields have `ReferenceTo`. This is what the MCP generator uses to produce argument schemas with validation and cross-tool linking.
+- **Synthetic action objects (`cycles:activate`, `accounts:suspend`, `cycleSteps:prerequisites`)**: expose verb-style tools naturally. `:suspend` / `:activate` / `:prerequisites` map cleanly to MCP tool names like `cyclr_account_suspend`, `cyclr_cycle_activate`, `cyclr_cycle_step_prerequisites`.
+- **Parent-scoped list objects (`cycles/*/steps`, `steps/*/parameters`)**: let the MCP generator produce "list children of X" tools without needing special-case logic.
+
+### Progressive disclosure — who implements what
+
+| Concern | Implemented by | How |
+|---|---|---|
+| Lazy metadata loading | Gateway | Calls `ListObjectMetadata` on demand; the connector's static schema is cheap. |
+| Tool-group collapsing | Gateway | Groups by object-name prefix per FR-049 taxonomy. |
+| Argument schema derivation | Gateway | From `FieldMetadata` populated by this connector. |
+| Top-level summary tool | Gateway | `list_providers`, `list_objects` — not connector-level. |
+| Per-object docs / descriptions | **Gap** — the library has no object-level docs field | Gateway may synthesize from `DisplayName` + heuristics, or this feature may contribute a light Ampersand-upstream proposal to add `ObjectMetadata.Description`. Noted for post-MVP. |
+
+### What the connector deliberately does NOT do
+
+- Does not emit MCP-protocol messages directly. That's the gateway's job.
+- Does not define tool groups or descriptions in its own code. Names and field metadata carry the information; the gateway composes.
+- Does not duplicate Cyclr's per-method schemas for Step parameters. `MappingType` + generic `Value`/`SourceStepId`/`VariableName` union is the agent-facing abstraction; Cyclr rejects invalid combinations with 422 and we surface the `ModelState`.
+
+### Alternatives considered
+
+- **Embed MCP protocol in the connector** — rejected: wrong layer, would duplicate what the gateway does.
+- **Static per-object tool descriptions in a metadata file** — rejected for MVP: Ampersand has no slot for it; adding upstream is out of scope for this feature.
+- **Per-Connector-method Step parameter schemas** — rejected: would require dynamic introspection of every installed third-party Connector's method surface. Agents can work with the MappingType abstraction and iteratively refine.
 
 ---
 
