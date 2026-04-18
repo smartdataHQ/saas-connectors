@@ -98,3 +98,9 @@ Unit tests go in `test/<provider>/<functionality>/` (e.g., `test/salesforce/read
 
 - Separate PRs for each capability: proxy first, then metadata, read, write, delete
 - Title format: `feat: Add <Provider> <functionality> Connector` or `[ConnectorName] Add support for <feature>`
+
+<!-- SPECKIT START -->
+Active feature plan: [specs/149-cyclr-connector/plan.md](specs/149-cyclr-connector/plan.md)
+Spec: [specs/149-cyclr-connector/spec.md](specs/149-cyclr-connector/spec.md)
+Research, data model, contracts, quickstart: under [specs/149-cyclr-connector/](specs/149-cyclr-connector/)
+<!-- SPECKIT END -->
