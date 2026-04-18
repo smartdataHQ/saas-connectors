@@ -398,6 +398,71 @@ func validateSingleAssociation(actualAssoc, expectedAssoc common.Association) bo
 	return true
 }
 
+func TestReadWithCustomTimestampColumn(t *testing.T) {
+	t.Parallel()
+
+	responseListContacts := testutils.DataFromFile(t, "read-list-contacts.json")
+
+	since := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
+
+	tests := []testroutines.Read{
+		{
+			Name: "Incremental read uses custom timestamp column in SOQL",
+			Input: common.ReadParams{
+				ObjectName: "contacts",
+				Fields:     connectors.Fields("Department"),
+				Since:      since,
+			},
+			Server: mockserver.Conditional{
+				Setup: mockserver.ContentJSON(),
+				If: mockcond.And{
+					mockcond.Path("/services/data/v60.0/query"),
+					mockcond.QueryParam("q",
+						"SELECT Id,Department FROM contacts WHERE LastModifiedDate > 2024-01-15T00:00:00Z"),
+				},
+				Then: mockserver.Response(http.StatusOK, responseListContacts),
+			}.Server(),
+			Comparator: testroutines.ComparatorPagination,
+			Expected: &common.ReadResult{
+				Rows: 20,
+				Done: true,
+			},
+			ExpectedErrs: nil,
+		},
+		{
+			Name: "Backfill read unaffected by custom timestamp column",
+			Input: common.ReadParams{
+				ObjectName: "contacts",
+				Fields:     connectors.Fields("Department"),
+			},
+			Server: mockserver.Conditional{
+				Setup: mockserver.ContentJSON(),
+				If: mockcond.And{
+					mockcond.Path("/services/data/v60.0/query"),
+					mockcond.QueryParam("q", "SELECT Id,Department FROM contacts"),
+				},
+				Then: mockserver.Response(http.StatusOK, responseListContacts),
+			}.Server(),
+			Comparator: testroutines.ComparatorPagination,
+			Expected: &common.ReadResult{
+				Rows: 20,
+				Done: true,
+			},
+			ExpectedErrs: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.Name, func(t *testing.T) {
+			t.Parallel()
+
+			tt.Run(t, func() (connectors.ReadConnector, error) {
+				return constructTestConnectorWithTimestampColumn(tt.Server.URL, "LastModifiedDate")
+			})
+		})
+	}
+}
+
 func TestReadPardot(t *testing.T) { //nolint:funlen,gocognit,cyclop,maintidx
 	t.Parallel()
 
@@ -405,6 +470,7 @@ func TestReadPardot(t *testing.T) { //nolint:funlen,gocognit,cyclop,maintidx
 	responseMissingQuery := testutils.DataFromFile(t, "pardot/read/emails/err-missing-query.json")
 	responseEmailsFirstPage := testutils.DataFromFile(t, "pardot/read/emails/1-first-page.json")
 	responseEmailsEmptyPage := testutils.DataFromFile(t, "pardot/read/emails/2-empty-page.json")
+	responseProspects := testutils.DataFromFile(t, "pardot/read/prospects.json")
 
 	pardotHeader := http.Header{
 		"Pardot-Business-Unit-Id": []string{"test-business-unit-id"},
@@ -548,6 +614,70 @@ func TestReadPardot(t *testing.T) { //nolint:funlen,gocognit,cyclop,maintidx
 			},
 			ExpectedErrs: nil,
 		},
+		{
+			Name: "Read prospects with custom field",
+			Input: common.ReadParams{
+				ObjectName: "prospects",
+				Fields:     connectors.Fields("hobby__c"),
+			},
+			Server: mockserver.Conditional{
+				Setup: mockserver.ContentJSON(),
+				If: mockcond.And{
+					mockcond.Path("/api/v5/objects/prospects"),
+					mockcond.QueryParam("limit", "1000"),
+					mockcond.QueryParam("fields", "hobby__c"),
+					mockcond.Header(pardotHeader),
+				},
+				Then: mockserver.Response(http.StatusOK, responseProspects),
+			}.Server(),
+			Comparator: testroutines.ComparatorSubsetRead,
+			Expected: &common.ReadResult{
+				Rows: 3,
+				Data: []common.ReadResultRow{{
+					Id: "55389571",
+					Fields: map[string]any{
+						"hobby__c": nil,
+					},
+					Raw: map[string]any{
+						"id":           float64(55389571),
+						"email":        "a.alexander@sample.com",
+						"firstName":    "Athenasius",
+						"lastName":     "Alexander",
+						"biography__c": nil,
+						"hobby__c":     nil,
+					},
+				}, {
+					Id: "55389574",
+					Fields: map[string]any{
+						"hobby__c": nil,
+					},
+					Raw: map[string]any{
+						"id":           float64(55389574),
+						"email":        "spidey@test.com",
+						"firstName":    "Man",
+						"lastName":     "Spider",
+						"biography__c": nil,
+						"hobby__c":     nil,
+					},
+				}, {
+					Id: "64629229",
+					Fields: map[string]any{
+						"hobby__c": "swimming",
+					},
+					Raw: map[string]any{
+						"id":           float64(64629229),
+						"email":        "b.loretta@sample.com",
+						"firstName":    "Loretta",
+						"lastName":     "Burke",
+						"biography__c": nil,
+						"hobby__c":     "swimming",
+					},
+				}},
+				NextPage: "",
+				Done:     true,
+			},
+			ExpectedErrs: nil,
+		},
 	}
 
 	for _, tt := range tests {
@@ -560,6 +690,26 @@ func TestReadPardot(t *testing.T) { //nolint:funlen,gocognit,cyclop,maintidx
 			})
 		})
 	}
+}
+
+func constructTestConnectorWithTimestampColumn(serverURL, field string) (*Connector, error) {
+	connector, err := NewConnector(
+		WithAuthenticatedClient(mockutils.NewClient()),
+		WithWorkspace("test-workspace"),
+		WithModule(providers.ModuleSalesforceCRM),
+		WithTimestampColumn(field),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	connector.SetBaseURL(mockutils.ReplaceURLOrigin(connector.moduleInfo.BaseURL, serverURL))
+
+	if connector.crmAdapter != nil {
+		connector.crmAdapter.SetUnitTestBaseURL(mockutils.ReplaceURLOrigin(connector.HTTPClient().Base, serverURL))
+	}
+
+	return connector, nil
 }
 
 func constructTestConnector(serverURL string) (*Connector, error) {
