@@ -1,0 +1,288 @@
+{
+  "modules": {
+    "root": {
+      "id": "root",
+      "path": "/v1.0",
+      "objects": {
+        "cycles": {
+          "displayName": "Cycles",
+          "path": "/cycles",
+          "responseKey": "",
+          "fields": {
+            "Id": {
+              "displayName": "Id",
+              "valueType": "string",
+              "providerType": "Guid",
+              "readOnly": true
+            },
+            "Name": {
+              "displayName": "Name",
+              "valueType": "string",
+              "providerType": "String",
+              "readOnly": true
+            },
+            "Status": {
+              "displayName": "Status",
+              "valueType": "singleSelect",
+              "providerType": "String",
+              "readOnly": true,
+              "values": [
+                {"value": "Active", "displayValue": "Active"},
+                {"value": "Paused", "displayValue": "Paused"}
+              ]
+            },
+            "TemplateId": {
+              "displayName": "Template Id",
+              "valueType": "string",
+              "providerType": "Guid",
+              "readOnly": true
+            },
+            "Interval": {
+              "displayName": "Interval (minutes)",
+              "valueType": "int",
+              "providerType": "Int32",
+              "readOnly": true,
+              "values": [
+                {"value": "1", "displayValue": "1"},
+                {"value": "5", "displayValue": "5"},
+                {"value": "15", "displayValue": "15"},
+                {"value": "30", "displayValue": "30"},
+                {"value": "60", "displayValue": "60"},
+                {"value": "120", "displayValue": "120"},
+                {"value": "180", "displayValue": "180"},
+                {"value": "240", "displayValue": "240"},
+                {"value": "360", "displayValue": "360"},
+                {"value": "480", "displayValue": "480"},
+                {"value": "720", "displayValue": "720"},
+                {"value": "1440", "displayValue": "1440"},
+                {"value": "10080", "displayValue": "10080"}
+              ]
+            },
+            "StartTime": {
+              "displayName": "Start Time",
+              "valueType": "date",
+              "providerType": "DateTime",
+              "readOnly": true
+            },
+            "RunOnce": {
+              "displayName": "Run Once",
+              "valueType": "boolean",
+              "providerType": "Boolean",
+              "readOnly": true
+            },
+            "Connectors": {
+              "displayName": "Connectors",
+              "valueType": "other",
+              "providerType": "Array",
+              "readOnly": true
+            },
+            "ErrorCount": {
+              "displayName": "Error Count",
+              "valueType": "int",
+              "providerType": "Int32",
+              "readOnly": true
+            },
+            "WarningCount": {
+              "displayName": "Warning Count",
+              "valueType": "int",
+              "providerType": "Int32",
+              "readOnly": true
+            },
+            "CreatedOnUtc": {
+              "displayName": "Created On (UTC)",
+              "valueType": "date",
+              "providerType": "DateTime",
+              "readOnly": true
+            }
+          },
+          "docs": "https://community.cyclr.com/user-documentation/api/introduction-to-the-cyclr-api"
+        },
+        "templates": {
+          "displayName": "Templates (Account view)",
+          "path": "/templates",
+          "responseKey": "",
+          "fields": {
+            "Id": {
+              "displayName": "Id",
+              "valueType": "string",
+              "providerType": "Guid",
+              "readOnly": true
+            },
+            "Name": {
+              "displayName": "Name",
+              "valueType": "string",
+              "providerType": "String",
+              "readOnly": true
+            },
+            "Description": {
+              "displayName": "Description",
+              "valueType": "string",
+              "providerType": "String",
+              "readOnly": true
+            },
+            "Category": {
+              "displayName": "Category",
+              "valueType": "string",
+              "providerType": "String",
+              "readOnly": true
+            },
+            "Version": {
+              "displayName": "Version",
+              "valueType": "int",
+              "providerType": "Int32",
+              "readOnly": true
+            },
+            "Connectors": {
+              "displayName": "Connectors",
+              "valueType": "other",
+              "providerType": "Array",
+              "readOnly": true
+            },
+            "CreatedOnUtc": {
+              "displayName": "Created On (UTC)",
+              "valueType": "date",
+              "providerType": "DateTime",
+              "readOnly": true
+            }
+          },
+          "docs": "https://community.cyclr.com/user-documentation/api/introduction-to-the-cyclr-api"
+        },
+        "cycleSteps": {
+          "displayName": "Cycle Steps",
+          "path": "/steps",
+          "responseKey": "",
+          "fields": {
+            "Id":                 {"displayName": "Id", "valueType": "string", "providerType": "Guid", "readOnly": true},
+            "Name":               {"displayName": "Name", "valueType": "string", "providerType": "String", "readOnly": true},
+            "CycleId":            {"displayName": "Cycle Id", "valueType": "string", "providerType": "Guid", "readOnly": true},
+            "ConnectorId":        {"displayName": "Connector Id", "valueType": "string", "providerType": "Guid", "readOnly": true},
+            "AccountConnectorId": {"displayName": "Account Connector Id", "valueType": "string", "providerType": "Guid", "readOnly": true},
+            "MethodName":         {"displayName": "Method Name", "valueType": "string", "providerType": "String", "readOnly": true},
+            "StepType": {
+              "displayName": "Step Type",
+              "valueType": "singleSelect",
+              "providerType": "String",
+              "readOnly": true,
+              "values": [
+                {"value": "Action",  "displayValue": "Action"},
+                {"value": "Trigger", "displayValue": "Trigger"},
+                {"value": "Control", "displayValue": "Control"}
+              ]
+            },
+            "ErrorCount":   {"displayName": "Error Count",   "valueType": "int", "providerType": "Int32", "readOnly": true},
+            "WarningCount": {"displayName": "Warning Count", "valueType": "int", "providerType": "Int32", "readOnly": true}
+          },
+          "docs": "https://community.cyclr.com/user-documentation/api/introduction-to-the-cyclr-api"
+        },
+        "cycleSteps:prerequisites": {
+          "displayName": "Cycle Step Prerequisites",
+          "path": "/steps/{stepId}/prerequisites",
+          "responseKey": "",
+          "fields": {
+            "Type":   {"displayName": "Type",   "valueType": "string", "providerType": "String", "readOnly": true},
+            "Name":   {"displayName": "Name",   "valueType": "string", "providerType": "String", "readOnly": true},
+            "Reason": {"displayName": "Reason", "valueType": "string", "providerType": "String", "readOnly": true}
+          },
+          "docs": "https://community.cyclr.com/user-documentation/api/introduction-to-the-cyclr-api"
+        },
+        "stepParameters": {
+          "displayName": "Step Parameters",
+          "path": "/steps/{stepId}/parameters",
+          "responseKey": "",
+          "fields": {
+            "Id":     {"displayName": "Id",     "valueType": "string", "providerType": "Guid",   "readOnly": true},
+            "StepId": {"displayName": "Step Id","valueType": "string", "providerType": "Guid",   "readOnly": true},
+            "Name":   {"displayName": "Name",   "valueType": "string", "providerType": "String", "readOnly": true},
+            "MappingType": {
+              "displayName": "Mapping Type",
+              "valueType": "singleSelect",
+              "providerType": "String",
+              "values": [
+                {"value": "StaticValue",     "displayValue": "Static Value"},
+                {"value": "ValueList",       "displayValue": "Value List"},
+                {"value": "StepOutput",      "displayValue": "Step Output"},
+                {"value": "AccountVariable", "displayValue": "Account Variable"}
+              ]
+            },
+            "Value":           {"displayName": "Value",            "valueType": "string", "providerType": "String"},
+            "SourceStepId":    {"displayName": "Source Step Id",   "valueType": "string", "providerType": "Guid"},
+            "SourceFieldName": {"displayName": "Source Field Name","valueType": "string", "providerType": "String"},
+            "VariableName":    {"displayName": "Variable Name",    "valueType": "string", "providerType": "String"},
+            "AllowedValues":   {"displayName": "Allowed Values",   "valueType": "other",  "providerType": "Array", "readOnly": true}
+          },
+          "docs": "https://community.cyclr.com/user-documentation/api/introduction-to-the-cyclr-api"
+        },
+        "stepFieldMappings": {
+          "displayName": "Step Field Mappings",
+          "path": "/steps/{stepId}/fieldmappings",
+          "responseKey": "",
+          "fields": {
+            "Id":     {"displayName": "Id",     "valueType": "string", "providerType": "Guid",   "readOnly": true},
+            "StepId": {"displayName": "Step Id","valueType": "string", "providerType": "Guid",   "readOnly": true},
+            "Name":   {"displayName": "Name",   "valueType": "string", "providerType": "String", "readOnly": true},
+            "MappingType": {
+              "displayName": "Mapping Type",
+              "valueType": "singleSelect",
+              "providerType": "String",
+              "values": [
+                {"value": "StaticValue",     "displayValue": "Static Value"},
+                {"value": "ValueList",       "displayValue": "Value List"},
+                {"value": "StepOutput",      "displayValue": "Step Output"},
+                {"value": "AccountVariable", "displayValue": "Account Variable"}
+              ]
+            },
+            "Value":           {"displayName": "Value",            "valueType": "string", "providerType": "String"},
+            "SourceStepId":    {"displayName": "Source Step Id",   "valueType": "string", "providerType": "Guid"},
+            "SourceFieldName": {"displayName": "Source Field Name","valueType": "string", "providerType": "String"},
+            "VariableName":    {"displayName": "Variable Name",    "valueType": "string", "providerType": "String"},
+            "AllowedValues":   {"displayName": "Allowed Values",   "valueType": "other",  "providerType": "Array", "readOnly": true}
+          },
+          "docs": "https://community.cyclr.com/user-documentation/api/introduction-to-the-cyclr-api"
+        },
+        "connectors": {
+          "displayName": "Connectors (Catalog)",
+          "path": "/connectors",
+          "responseKey": "",
+          "fields": {
+            "Id":                 {"displayName": "Id",                  "valueType": "string",       "providerType": "Guid",   "readOnly": true},
+            "Name":               {"displayName": "Name",                "valueType": "string",       "providerType": "String", "readOnly": true},
+            "AuthenticationType": {"displayName": "Authentication Type", "valueType": "singleSelect", "providerType": "String", "readOnly": true,
+              "values": [
+                {"value": "OAuth2", "displayValue": "OAuth2"},
+                {"value": "ApiKey", "displayValue": "API Key"},
+                {"value": "Basic",  "displayValue": "Basic Auth"}
+              ]
+            },
+            "Version":  {"displayName": "Version",   "valueType": "int",     "providerType": "Int32",   "readOnly": true},
+            "IsPublic": {"displayName": "Is Public", "valueType": "boolean", "providerType": "Boolean", "readOnly": true}
+          },
+          "docs": "https://community.cyclr.com/user-documentation/api/introduction-to-the-cyclr-api"
+        },
+        "accountConnectors": {
+          "displayName": "Account Connectors",
+          "path": "/account/connectors",
+          "responseKey": "",
+          "fields": {
+            "Id":          {"displayName": "Id",          "valueType": "string", "providerType": "Guid",   "readOnly": true},
+            "ConnectorId": {"displayName": "Connector Id","valueType": "string", "providerType": "Guid"},
+            "Name":        {"displayName": "Name",        "valueType": "string", "providerType": "String"},
+            "Description": {"displayName": "Description", "valueType": "string", "providerType": "String"},
+            "AuthenticationState": {
+              "displayName": "Authentication State",
+              "valueType": "singleSelect",
+              "providerType": "String",
+              "readOnly": true,
+              "values": [
+                {"value": "Authenticated",          "displayValue": "Authenticated"},
+                {"value": "AwaitingAuthentication", "displayValue": "Awaiting Authentication"}
+              ]
+            },
+            "AuthValue":    {"displayName": "Auth Value (write-only secret)", "valueType": "string", "providerType": "String"},
+            "CreatedOnUtc": {"displayName": "Created On (UTC)", "valueType": "date", "providerType": "DateTime", "readOnly": true}
+          },
+          "docs": "https://community.cyclr.com/user-documentation/api/introduction-to-the-cyclr-api"
+        }
+      }
+    }
+  }
+}

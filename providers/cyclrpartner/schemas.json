@@ -1,0 +1,139 @@
+{
+  "modules": {
+    "root": {
+      "id": "root",
+      "path": "/v1.0",
+      "objects": {
+        "accounts": {
+          "displayName": "Accounts",
+          "path": "/accounts",
+          "responseKey": "",
+          "fields": {
+            "Id": {
+              "displayName": "Id",
+              "valueType": "string",
+              "providerType": "Guid",
+              "readOnly": true
+            },
+            "Name": {
+              "displayName": "Name",
+              "valueType": "string",
+              "providerType": "String"
+            },
+            "Description": {
+              "displayName": "Description",
+              "valueType": "string",
+              "providerType": "String"
+            },
+            "Timezone": {
+              "displayName": "Timezone",
+              "valueType": "string",
+              "providerType": "String"
+            },
+            "StepDataSuccessRetentionHours": {
+              "displayName": "Step Data Success Retention (hours)",
+              "valueType": "int",
+              "providerType": "Int32"
+            },
+            "StepDataErroredRetentionHours": {
+              "displayName": "Step Data Errored Retention (hours)",
+              "valueType": "int",
+              "providerType": "Int32"
+            },
+            "TransactionErrorWebhookEnabled": {
+              "displayName": "Transaction Error Webhook Enabled",
+              "valueType": "boolean",
+              "providerType": "Boolean"
+            },
+            "TransactionErrorWebhookUrl": {
+              "displayName": "Transaction Error Webhook URL",
+              "valueType": "string",
+              "providerType": "String"
+            },
+            "TransactionErrorWebhookIncludeWarnings": {
+              "displayName": "Transaction Error Webhook Include Warnings",
+              "valueType": "boolean",
+              "providerType": "Boolean"
+            },
+            "CreatedDate": {
+              "displayName": "Created Date",
+              "valueType": "date",
+              "providerType": "DateTime",
+              "readOnly": true
+            },
+            "NextBillDateUtc": {
+              "displayName": "Next Bill Date (UTC)",
+              "valueType": "date",
+              "providerType": "DateTime",
+              "readOnly": true
+            },
+            "AuditInfo": {
+              "displayName": "Audit Info",
+              "valueType": "other",
+              "providerType": "Object",
+              "readOnly": true
+            },
+            "TaskAuditInfo": {
+              "displayName": "Task Audit Info",
+              "valueType": "other",
+              "providerType": "Object",
+              "readOnly": true
+            }
+          },
+          "docs": "https://community.cyclr.com/user-documentation/api/introduction-to-the-cyclr-api"
+        },
+        "templates": {
+          "displayName": "Templates",
+          "path": "/templates",
+          "responseKey": "",
+          "fields": {
+            "Id": {
+              "displayName": "Id",
+              "valueType": "string",
+              "providerType": "Guid",
+              "readOnly": true
+            },
+            "Name": {
+              "displayName": "Name",
+              "valueType": "string",
+              "providerType": "String",
+              "readOnly": true
+            },
+            "Description": {
+              "displayName": "Description",
+              "valueType": "string",
+              "providerType": "String",
+              "readOnly": true
+            },
+            "Category": {
+              "displayName": "Category",
+              "valueType": "string",
+              "providerType": "String",
+              "readOnly": true
+            },
+            "Version": {
+              "displayName": "Version",
+              "valueType": "int",
+              "providerType": "Int32",
+              "readOnly": true
+            },
+            "Connectors": {
+              "displayName": "Connectors",
+              "valueType": "other",
+              "providerType": "Array",
+              "readOnly": true
+            },
+            "CreatedOnUtc": {
+              "displayName": "Created On (UTC)",
+              "valueType": "date",
+              "providerType": "DateTime",
+              "readOnly": true
+            }
+          },
+          "docs": "https://community.cyclr.com/user-documentation/api/introduction-to-the-cyclr-api"
+        }
+      }
+    }
+  }
+}
+
