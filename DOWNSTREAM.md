@@ -14,6 +14,63 @@ This fork exists so that `smartdataHQ` can:
 
 The fork is otherwise a pure mirror of upstream. Sync flow below keeps it that way for unchanged providers.
 
+## Getting started on a fresh checkout
+
+Do this once per machine. Skip if `golangci-lint --version` already reports `v2.7.1`.
+
+```bash
+# macOS prerequisites (Go 1.25+, Rust for typos-cli)
+brew install go rustup-init
+rustup-init -y     # needed for cargo install typos-cli
+
+# Install linters + git hooks (runs the cargo install too)
+make install/dev
+
+# Build the custom golangci-lint binary (has nogoroutine + modulelinter plugins)
+make custom-gcl
+
+# Verify
+make lint
+make test
+```
+
+If `make install/linters` fails on `typos-cli` and you don't need spell-checking, the lint step will still run — it just prints a "typos not found" warning.
+
+### Provider credentials for real-API tests
+
+Layer 2 tests (below) hit real provider APIs. They read credentials from `~/.ampersand-creds/<provider>.json` via `common/scanning/credscanning`. Credential files are never committed.
+
+- **OAuth providers**: run `make update-creds`, which walks you through the OAuth dance and writes the JSON file.
+- **API-key providers**: create the file manually. Structure varies per auth type — `scripts/oauth/README.md` documents the OAuth flow; for API keys, copy an existing file and swap fields.
+- **No creds needed** for Layer 1 (unit tests).
+
+`credscanning.LoadPath(providers.<Name>)` resolves the path from the provider constant. If you get `file not found`, confirm the provider name matches the filename exactly (lowercased, without hyphens removed — e.g., `providers.ZendeskSupport` → `zendeskSupport.json`).
+
+## Starting a new connector
+
+Drop this template into a fresh claude session in this repo, filling in the placeholders:
+
+```
+New connector work. Read DOWNSTREAM.md, CONTRIBUTING.md, and CLAUDE.md first.
+
+Adding provider: <name>
+  API docs: <url>
+  Auth type: <oauth2_authorization_code | oauth2_client_credentials |
+              api_key_header | api_key_query | bearer_token | basic_auth>
+  Base URL: <https://api.example.com>    # no version suffix
+  Required metadata: <workspace | tenant | none>
+
+Scope: <proxy-only | deep R | deep R+W | deep R+W+D | deep R+W+D+Metadata>
+Reference connector to mimic: providers/<airtable | anthropic | capsule | attio | salesforce>
+
+Branch: feat/<name>-connector
+Follow CONTRIBUTING.md recipes. Run make test + make lint before PR.
+```
+
+The session has everything it needs from the committed repo: authoring conventions (`CLAUDE.md`), step-by-step recipes (`CONTRIBUTING.md`), integration + testing strategy (this file), and the provider-package examples referenced above.
+
+After the connector merges to fork `main`, bump downstream — see "Adding a connector" below.
+
 ## How the fork is wired in downstream
 
 The fork's `go.mod` declares:
@@ -256,7 +313,6 @@ These must land together — the library change alone is not sufficient for down
 - **Branch protection on `main`.** Direct push refused even for fast-forward syncs. Always PR.
 - **Public module proxy handles the fork.** No `GOPRIVATE` / auth needed in downstream Dockerfile — the fork is a public repo.
 - **CGO is downstream's concern, not this repo's.** This library builds with pure Go; the `confluent-kafka-go` CGO requirement is in the gateway, not here.
-- **`CLAUDE.md` is intentionally untracked in the fork.** It's a local dev aid. Do not commit it — anything that needs to be shared goes here (`DOWNSTREAM.md`) or in upstream docs.
 - **Do not carry untested connectors to the downstream bump.** If a connector's `go test ./providers/<name>/...` is red or the package doesn't build, downstream `go build ./...` fails — the gateway compiles every imported package transitively through `connector/new.go`.
 
 ## Links
