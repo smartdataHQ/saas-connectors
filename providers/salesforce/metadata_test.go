@@ -4,12 +4,10 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/amp-labs/connectors"
 	"github.com/amp-labs/connectors/common"
-	"github.com/amp-labs/connectors/internal/goutils"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockcond"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockserver"
-	"github.com/amp-labs/connectors/test/utils/testroutines"
+	"github.com/amp-labs/connectors/test/utils/testconn"
 	"github.com/amp-labs/connectors/test/utils/testutils"
 )
 
@@ -20,7 +18,7 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop
 	responseAccountsMeta := testutils.DataFromFile(t, "metadata/read/accounts-sampled.json")
 	responseCustomObjMeta := testutils.DataFromFile(t, "metadata/read/custom-object-with-custom-fields.json")
 
-	tests := []testroutines.Metadata{
+	tests := []testconn.TestCaseListObjectMetadata{
 		{
 			Name:         "At least one object name must be queried",
 			Input:        nil,
@@ -47,7 +45,7 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop
 				}]}`),
 				Then: mockserver.Response(http.StatusOK, responseOrgMeta),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetMetadata,
+			Comparator: testconn.ComparatorSubsetMetadata,
 			Expected: &common.ListObjectMetadataResult{
 				Result: map[string]common.ObjectMetadata{
 					"organization": {
@@ -57,53 +55,53 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop
 								DisplayName:  "Name",
 								ValueType:    "string",
 								ProviderType: "string",
-								ReadOnly:     goutils.Pointer(false),
-								IsCustom:     goutils.Pointer(false),
-								IsRequired:   goutils.Pointer(false),
+								ReadOnly:     new(false),
+								IsCustom:     new(false),
+								IsRequired:   new(false),
 							},
 							"preferencesconsentmanagementenabled": {
 								DisplayName:  "ConsentManagementEnabled",
 								ValueType:    "boolean",
 								ProviderType: "boolean",
-								ReadOnly:     goutils.Pointer(false),
-								IsCustom:     goutils.Pointer(false),
-								IsRequired:   goutils.Pointer(false),
+								ReadOnly:     new(false),
+								IsCustom:     new(false),
+								IsRequired:   new(false),
 								Values:       nil,
 							},
 							"latitude": {
 								DisplayName:  "Latitude",
 								ValueType:    "float",
 								ProviderType: "double",
-								ReadOnly:     goutils.Pointer(false),
-								IsCustom:     goutils.Pointer(false),
-								IsRequired:   goutils.Pointer(false),
+								ReadOnly:     new(false),
+								IsCustom:     new(false),
+								IsRequired:   new(false),
 								Values:       nil,
 							},
 							"monthlypageviewsused": {
 								DisplayName:  "Monthly Page Views Used",
 								ValueType:    "int",
 								ProviderType: "int",
-								ReadOnly:     goutils.Pointer(true),
-								IsCustom:     goutils.Pointer(false),
-								IsRequired:   goutils.Pointer(false),
+								ReadOnly:     new(true),
+								IsCustom:     new(false),
+								IsRequired:   new(false),
 								Values:       nil,
 							},
 							"systemmodstamp": {
 								DisplayName:  "System Modstamp",
 								ValueType:    "datetime",
 								ProviderType: "datetime",
-								ReadOnly:     goutils.Pointer(true),
-								IsCustom:     goutils.Pointer(false),
-								IsRequired:   goutils.Pointer(false),
+								ReadOnly:     new(true),
+								IsCustom:     new(false),
+								IsRequired:   new(false),
 								Values:       nil,
 							},
 							"defaultaccountaccess": {
 								DisplayName:  "Default Account Access",
 								ValueType:    "singleSelect",
 								ProviderType: "picklist",
-								ReadOnly:     goutils.Pointer(true),
-								IsCustom:     goutils.Pointer(false),
-								IsRequired:   goutils.Pointer(false),
+								ReadOnly:     new(true),
+								IsCustom:     new(false),
+								IsRequired:   new(false),
 								Values: []common.FieldValue{{
 									Value:        "None",
 									DisplayValue: "Private",
@@ -125,9 +123,9 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop
 								DisplayName:  "Phone",
 								ValueType:    "string",
 								ProviderType: "phone",
-								ReadOnly:     goutils.Pointer(false),
-								IsCustom:     goutils.Pointer(false),
-								IsRequired:   goutils.Pointer(false),
+								ReadOnly:     new(false),
+								IsCustom:     new(false),
+								IsRequired:   new(false),
 								Values:       nil,
 							},
 						},
@@ -158,7 +156,7 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop
 				}]}`),
 				Then: mockserver.Response(http.StatusOK, responseCustomObjMeta),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetMetadata,
+			Comparator: testconn.ComparatorSubsetMetadata,
 			Expected: &common.ListObjectMetadataResult{
 				Result: map[string]common.ObjectMetadata{
 					"testobject15__c": {
@@ -168,17 +166,17 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop
 								DisplayName:  "Record ID",
 								ValueType:    "string",
 								ProviderType: "id",
-								ReadOnly:     goutils.Pointer(true),
-								IsCustom:     goutils.Pointer(false),
-								IsRequired:   goutils.Pointer(false),
+								ReadOnly:     new(true),
+								IsCustom:     new(false),
+								IsRequired:   new(false),
 							},
 							"interests__c": {
 								DisplayName:  "Interests",
 								ValueType:    "multiSelect",
 								ProviderType: "multipicklist",
-								ReadOnly:     goutils.Pointer(false),
-								IsCustom:     goutils.Pointer(true),
-								IsRequired:   goutils.Pointer(false),
+								ReadOnly:     new(false),
+								IsCustom:     new(true),
+								IsRequired:   new(false),
 								Values: []common.FieldValue{{
 									Value:        "art",
 									DisplayValue: "art",
@@ -194,9 +192,9 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop
 								DisplayName:  "MailBox",
 								ValueType:    "string",
 								ProviderType: "email",
-								ReadOnly:     goutils.Pointer(false),
-								IsCustom:     goutils.Pointer(true),
-								IsRequired:   goutils.Pointer(false),
+								ReadOnly:     new(false),
+								IsCustom:     new(true),
+								IsRequired:   new(false),
 							},
 						},
 					},
@@ -217,7 +215,7 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop
 				}]}`),
 				Then: mockserver.Response(http.StatusOK, responseAccountsMeta),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetMetadata,
+			Comparator: testconn.ComparatorSubsetMetadata,
 			Expected: &common.ListObjectMetadataResult{
 				Result: map[string]common.ObjectMetadata{
 					"account": {
@@ -227,34 +225,34 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop
 								DisplayName:  "Account Name",
 								ValueType:    "string",
 								ProviderType: "string",
-								ReadOnly:     goutils.Pointer(false),
-								IsCustom:     goutils.Pointer(false),
-								IsRequired:   goutils.Pointer(true),
+								ReadOnly:     new(false),
+								IsCustom:     new(false),
+								IsRequired:   new(true),
 							},
 							"createddate": {
 								DisplayName:  "Created Date",
 								ValueType:    "datetime",
 								ProviderType: "datetime",
-								ReadOnly:     goutils.Pointer(true),
-								IsCustom:     goutils.Pointer(false),
-								IsRequired:   goutils.Pointer(false),
+								ReadOnly:     new(true),
+								IsCustom:     new(false),
+								IsRequired:   new(false),
 							},
 							"createdbyid": {
 								DisplayName:  "Created By ID",
 								ValueType:    "reference",
 								ProviderType: "reference",
-								ReadOnly:     goutils.Pointer(true),
-								IsCustom:     goutils.Pointer(false),
-								IsRequired:   goutils.Pointer(false),
+								ReadOnly:     new(true),
+								IsCustom:     new(false),
+								IsRequired:   new(false),
 								ReferenceTo:  []string{"User"},
 							},
 							"photourl": {
 								DisplayName:  "Photo URL",
 								ValueType:    "string",
 								ProviderType: "url",
-								ReadOnly:     goutils.Pointer(true),
-								IsCustom:     goutils.Pointer(false),
-								IsRequired:   goutils.Pointer(false),
+								ReadOnly:     new(true),
+								IsCustom:     new(false),
+								IsRequired:   new(false),
 							},
 						},
 					},
@@ -270,7 +268,7 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop
 		t.Run(tt.Name, func(t *testing.T) {
 			t.Parallel()
 
-			tt.Run(t, func() (connectors.ObjectMetadataConnector, error) {
+			tt.Run(t, func() (testconn.TestableMetadataReader, error) {
 				return constructTestConnector(tt.Server.URL)
 			})
 		})
@@ -286,7 +284,7 @@ func TestListObjectMetadataPardot(t *testing.T) { // nolint:funlen,gocognit,cycl
 		"Pardot-Business-Unit-Id": []string{"test-business-unit-id"},
 	}
 
-	tests := []testroutines.Metadata{
+	tests := []testconn.TestCaseListObjectMetadata{
 		{
 			Name:         "At least one object name must be queried",
 			Input:        nil,
@@ -297,7 +295,7 @@ func TestListObjectMetadataPardot(t *testing.T) { // nolint:funlen,gocognit,cycl
 			Name:       "Successfully describe one object with metadata",
 			Input:      []string{"EmAiLs"},
 			Server:     mockserver.Dummy(),
-			Comparator: testroutines.ComparatorSubsetMetadata,
+			Comparator: testconn.ComparatorSubsetMetadata,
 			Expected: &common.ListObjectMetadataResult{
 				Result: map[string]common.ObjectMetadata{
 					"emails": {
@@ -307,21 +305,21 @@ func TestListObjectMetadataPardot(t *testing.T) { // nolint:funlen,gocognit,cycl
 								DisplayName:  "listId",
 								ValueType:    "int",
 								ProviderType: "Integer",
-								ReadOnly:     goutils.Pointer(true),
+								ReadOnly:     new(true),
 								Values:       nil,
 							},
 							"sentAt": {
 								DisplayName:  "sentAt",
 								ValueType:    "datetime",
 								ProviderType: "DateTime",
-								ReadOnly:     goutils.Pointer(true),
+								ReadOnly:     new(true),
 								Values:       nil,
 							},
 							"type": {
 								DisplayName:  "type",
 								ValueType:    "singleSelect",
 								ProviderType: "Enum",
-								ReadOnly:     goutils.Pointer(true),
+								ReadOnly:     new(true),
 								Values: []common.FieldValue{{
 									Value:        "html",
 									DisplayValue: "html",
@@ -356,7 +354,20 @@ func TestListObjectMetadataPardot(t *testing.T) { // nolint:funlen,gocognit,cycl
 				},
 				Then: mockserver.Response(http.StatusOK, prospectsCustomFields),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetMetadata,
+			Comparator: func(
+				serverURL string, actual, expected *common.ListObjectMetadataResult,
+			) *testutils.CompareResult {
+				result := testutils.NewCompareResult()
+				// Usual subset comparison.
+				result.Merge(testconn.ComparatorSubsetMetadata(serverURL, actual, expected))
+
+				// The "language" field must be excluded from the response.
+				if _, present := actual.Result["prospects"].Fields["language__c"]; present {
+					result.AddDiff("Result['prospects']['language__c'] is present, but expected to be missing")
+				}
+
+				return result
+			},
 			Expected: &common.ListObjectMetadataResult{
 				Result: map[string]common.ObjectMetadata{
 					"prospects": {
@@ -367,24 +378,32 @@ func TestListObjectMetadataPardot(t *testing.T) { // nolint:funlen,gocognit,cycl
 								ValueType:    "string",
 								ProviderType: "String",
 								IsRequired:   nil,
-								ReadOnly:     goutils.Pointer(false),
+								ReadOnly:     new(false),
 								IsCustom:     nil,
 							},
 							"biography__c": {
 								DisplayName:  "Biography",
 								ValueType:    "string",
 								ProviderType: "text",
-								IsRequired:   goutils.Pointer(false),
-								ReadOnly:     goutils.Pointer(false),
-								IsCustom:     goutils.Pointer(true),
+								IsRequired:   new(false),
+								ReadOnly:     new(false),
+								IsCustom:     new(true),
 							},
 							"hobby__c": {
 								DisplayName:  "Hobby",
-								ValueType:    "other",
+								ValueType:    "string",
 								ProviderType: "radio button",
-								IsRequired:   goutils.Pointer(false),
-								ReadOnly:     goutils.Pointer(false),
-								IsCustom:     goutils.Pointer(true),
+								IsRequired:   new(false),
+								ReadOnly:     new(false),
+								IsCustom:     new(true),
+							},
+							"age__c": {
+								DisplayName:  "Age",
+								ValueType:    "float",
+								ProviderType: "number",
+								IsRequired:   new(false),
+								ReadOnly:     new(false),
+								IsCustom:     new(true),
 							},
 						},
 					},
@@ -400,7 +419,7 @@ func TestListObjectMetadataPardot(t *testing.T) { // nolint:funlen,gocognit,cycl
 		t.Run(tt.Name, func(t *testing.T) {
 			t.Parallel()
 
-			tt.Run(t, func() (connectors.ObjectMetadataConnector, error) {
+			tt.Run(t, func() (testconn.TestableMetadataReader, error) {
 				return constructTestConnectorAccountEngagement(tt.Server.URL)
 			})
 		})
@@ -421,7 +440,7 @@ func TestUpsertMetadataCRM(t *testing.T) { // nolint:funlen,gocognit,cyclop
 	responseUserInfo := testutils.DataFromFile(t, "metadata/write/user-info.json")
 	duplicatePermissionAssignment := testutils.DataFromFile(t, "metadata/write/err-duplicate-permission-assignment.json")
 
-	tests := []testroutines.UpsertMetadata{
+	tests := []testconn.TestCaseUpsertMetadata{
 		{
 			Name:         "At least one object name must be queried",
 			Input:        nil,
@@ -442,7 +461,7 @@ func TestUpsertMetadataCRM(t *testing.T) { // nolint:funlen,gocognit,cyclop
 							Unique:      false,
 							Indexed:     false,
 							StringOptions: &common.StringFieldOptions{
-								DefaultValue: goutils.Pointer("false"),
+								DefaultValue: new("false"),
 							},
 						},
 					},
@@ -476,7 +495,7 @@ func TestUpsertMetadataCRM(t *testing.T) { // nolint:funlen,gocognit,cyclop
 							Unique:      false,
 							Indexed:     false,
 							StringOptions: &common.StringFieldOptions{
-								Length: goutils.Pointer(30),
+								Length: new(30),
 							},
 						}, {
 							FieldName:   "Hobby__c",
@@ -487,8 +506,8 @@ func TestUpsertMetadataCRM(t *testing.T) { // nolint:funlen,gocognit,cyclop
 							Unique:      false,
 							Indexed:     false,
 							StringOptions: &common.StringFieldOptions{
-								Length:          goutils.Pointer(444),
-								NumDisplayLines: goutils.Pointer(39),
+								Length:          new(444),
+								NumDisplayLines: new(39),
 							},
 						}, {
 							FieldName:   "Age__c",
@@ -499,9 +518,9 @@ func TestUpsertMetadataCRM(t *testing.T) { // nolint:funlen,gocognit,cyclop
 							Unique:      false,
 							Indexed:     false,
 							NumericOptions: &common.NumericFieldOptions{
-								DefaultValue: goutils.Pointer(18.0),
-								Precision:    goutils.Pointer(3),
-								Scale:        goutils.Pointer(2),
+								DefaultValue: new(18.0),
+								Precision:    new(3),
+								Scale:        new(2),
 							},
 						}, {
 							FieldName:   "Interests__c",
@@ -514,7 +533,7 @@ func TestUpsertMetadataCRM(t *testing.T) { // nolint:funlen,gocognit,cyclop
 							StringOptions: &common.StringFieldOptions{
 								Values:           []string{"art", "travel", "swimming"},
 								ValuesRestricted: true,
-								DefaultValue:     goutils.Pointer("art"),
+								DefaultValue:     new("art"),
 							},
 						}, {
 							FieldName:   "IsReady__c",
@@ -525,7 +544,7 @@ func TestUpsertMetadataCRM(t *testing.T) { // nolint:funlen,gocognit,cyclop
 							Unique:      false,
 							Indexed:     false,
 							StringOptions: &common.StringFieldOptions{
-								DefaultValue: goutils.Pointer("false"),
+								DefaultValue: new("false"),
 							},
 						}, {
 							FieldName:   "Connection__c",
@@ -648,7 +667,7 @@ func TestUpsertMetadataCRM(t *testing.T) { // nolint:funlen,gocognit,cyclop
 
 			ctx := common.WithAuthToken(t.Context(), "TEST_ACCESS_TOKEN")
 
-			tt.RunWithContext(t, ctx, func() (connectors.UpsertMetadataConnector, error) {
+			tt.RunWithContext(t, ctx, func() (testconn.TestableMetadataUpdater, error) {
 				return constructTestConnector(tt.Server.URL)
 			})
 		})
@@ -658,7 +677,7 @@ func TestUpsertMetadataCRM(t *testing.T) { // nolint:funlen,gocognit,cyclop
 func TestUpsertMetadataNoAccessTokenCRM(t *testing.T) { // nolint:funlen,gocognit,cyclop
 	t.Parallel()
 
-	tests := []testroutines.UpsertMetadata{
+	tests := []testconn.TestCaseUpsertMetadata{
 		{
 			Name: "Access token must be injected into the context",
 			Input: &common.UpsertMetadataParams{
@@ -681,7 +700,7 @@ func TestUpsertMetadataNoAccessTokenCRM(t *testing.T) { // nolint:funlen,gocogni
 		t.Run(tt.Name, func(t *testing.T) {
 			t.Parallel()
 
-			tt.Run(t, func() (connectors.UpsertMetadataConnector, error) {
+			tt.Run(t, func() (testconn.TestableMetadataUpdater, error) {
 				return constructTestConnector(tt.Server.URL)
 			})
 		})
@@ -695,7 +714,7 @@ func TestDeleteMetadataCRM(t *testing.T) { // nolint:funlen,gocognit,cyclop
 	responseDeleteFields := testutils.DataFromFile(t, "metadata/delete/delete-fields-response.xml")
 	responseFieldNotFound := testutils.DataFromFile(t, "metadata/delete/delete-field-not-found.xml")
 
-	tests := []testroutines.DeleteMetadata{
+	tests := []testconn.TestCaseDeleteMetadata{
 		{
 			Name:         "At least one field must be provided",
 			Input:        nil,
@@ -757,7 +776,7 @@ func TestDeleteMetadataCRM(t *testing.T) { // nolint:funlen,gocognit,cyclop
 
 			ctx := common.WithAuthToken(t.Context(), "TEST_ACCESS_TOKEN")
 
-			tt.RunWithContext(t, ctx, func() (connectors.DeleteMetadataConnector, error) {
+			tt.RunWithContext(t, ctx, func() (testconn.TestableMetadataDeleter, error) {
 				return constructTestConnector(tt.Server.URL)
 			})
 		})
@@ -767,7 +786,7 @@ func TestDeleteMetadataCRM(t *testing.T) { // nolint:funlen,gocognit,cyclop
 func TestDeleteMetadataNoAccessTokenCRM(t *testing.T) { // nolint:funlen,gocognit,cyclop
 	t.Parallel()
 
-	tests := []testroutines.DeleteMetadata{
+	tests := []testconn.TestCaseDeleteMetadata{
 		{
 			Name: "Access token must be injected into the context",
 			Input: &common.DeleteMetadataParams{
@@ -785,7 +804,7 @@ func TestDeleteMetadataNoAccessTokenCRM(t *testing.T) { // nolint:funlen,gocogni
 		t.Run(tt.Name, func(t *testing.T) {
 			t.Parallel()
 
-			tt.Run(t, func() (connectors.DeleteMetadataConnector, error) {
+			tt.Run(t, func() (testconn.TestableMetadataDeleter, error) {
 				return constructTestConnector(tt.Server.URL)
 			})
 		})

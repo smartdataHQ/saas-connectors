@@ -1,11 +1,12 @@
 package mockutils
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
 	"strings"
+
+	"github.com/amp-labs/connectors/test/utils/testutils"
 )
 
 // ErrorNormalizedComparator provides helper methods to compare error values
@@ -27,10 +28,11 @@ type errorNormalizedComparator struct{}
 //  4. Fallback: string comparison via fmt.Sprintf("%v").
 //
 // It returns true if the two values are considered equivalent under these rules.
-func (errorNormalizedComparator) ErrorEquals(actualErr, expectedErr any) bool {
+func (errorNormalizedComparator) ErrorEquals(actualErr, expectedErr any) *testutils.CompareResult {
+	result := testutils.NewCompareResult()
 	// 1. Direct equality first.
 	if reflect.DeepEqual(actualErr, expectedErr) {
-		return true
+		return result // good
 	}
 
 	// 2. If both implement error, compare semantically.
@@ -39,35 +41,29 @@ func (errorNormalizedComparator) ErrorEquals(actualErr, expectedErr any) bool {
 
 	if aOK && eOL {
 		if errors.Is(aErr, eErr) || strings.Contains(aErr.Error(), eErr.Error()) {
-			return true
+			return result // good
 		}
 
-		return false
+		result.Assert("error", eErr, aErr)
+		return result
 	}
 
 	// 3. Handle JSON case if expected is a JSON string.
 	if expectedJSON, ok := expectedErr.(JSONErrorWrapper); ok {
-		aJSON, err := json.Marshal(actualErr)
-		if err != nil {
-			return false
+		if equals := JSONComparator.Equals(string(expectedJSON), actualErr); !equals.OK {
+			result.Merge(equals)
 		}
 
-		if jsonBodyMatch(aJSON, string(expectedJSON)) {
-			return true
-		}
-
-		return false
+		return result
 	}
 
 	// 4. Fallback string-based comparison.
 	aStr := fmt.Sprintf("%v", actualErr)
 	eStr := fmt.Sprintf("%v", expectedErr)
 
-	if aStr == eStr {
-		return true
-	}
+	result.Assert("error string", eStr, aStr)
 
-	return false
+	return result
 }
 
 // EachErrorEquals compares two slices of heterogeneous error values.
@@ -75,30 +71,20 @@ func (errorNormalizedComparator) ErrorEquals(actualErr, expectedErr any) bool {
 // according to ErrorEquals.
 //
 // Order and slice length must match exactly.
-func (c errorNormalizedComparator) EachErrorEquals(actual, expected []any) bool {
+func (c errorNormalizedComparator) EachErrorEquals(actual, expected []any) *testutils.CompareResult {
+	result := testutils.NewCompareResult()
 	if len(actual) != len(expected) {
-		return false
+		result.AddDiff("expected %d errors, got %d", len(expected), len(actual))
+		return result
 	}
 
 	for i := range len(actual) {
-		if !c.ErrorEquals(actual[i], expected[i]) {
-			return false
+		res := c.ErrorEquals(actual[i], expected[i])
+
+		for _, diff := range res.Diff {
+			result.AddDiff("Errors[%d] %s", i, diff)
 		}
 	}
 
-	return true
-}
-
-func jsonBodyMatch(actual []byte, expected string) bool {
-	first := make(map[string]any)
-	if err := json.Unmarshal(actual, &first); err != nil {
-		return false
-	}
-
-	second := make(map[string]any)
-	if err := json.Unmarshal([]byte(expected), &second); err != nil {
-		return false
-	}
-
-	return reflect.DeepEqual(first, second)
+	return result
 }

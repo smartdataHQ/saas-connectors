@@ -6,6 +6,7 @@ import (
 	"github.com/amp-labs/connectors/common/substitutions/catalogreplacer"
 	"github.com/amp-labs/connectors/common/urlbuilder"
 	"github.com/amp-labs/connectors/providers"
+	"github.com/amp-labs/connectors/providers/zoho/internal/mail"
 	"github.com/amp-labs/connectors/providers/zoho/internal/servicedeskplus"
 )
 
@@ -26,7 +27,16 @@ type Connector struct {
 	// servicedeskplusAdapter handles the ServiceDesk Plus module.
 	// It provides dedicated support for ServiceDesk Plus-specific endpoints and metadata.
 	servicedeskplusAdapter *servicedeskplus.Adapter
+
+	// mailAdapter handles the Zoho Mail module.
+	mailAdapter *mail.Adapter
 }
+
+// mailWebhookSecretMetadataKey is the connection-metadata key that carries the
+// Zoho Mail outgoing-webhook signing secret (the x-hook-secret value).
+//
+//nolint:gosec // G101 false positive: this is a metadata key name, not a credential.
+// const mailWebhookSecretMetadataKey = "zohoMailWebhookSecret"
 
 func NewConnector(opts ...Option) (conn *Connector, outErr error) { // nolint: funlen
 	params, err := paramsbuilder.Apply(parameters{}, opts,
@@ -83,6 +93,12 @@ func NewConnector(opts ...Option) (conn *Connector, outErr error) { // nolint: f
 				To:   domains.ServiceDeskPlusDomain,
 			},
 		},
+		catalogreplacer.CustomCatalogVariable{
+			Plan: catalogreplacer.SubstitutionPlan{
+				From: "zoho_mail_domain",
+				To:   domains.MailDomain,
+			},
+		},
 	)
 	if err != nil {
 		return nil, err
@@ -97,6 +113,20 @@ func NewConnector(opts ...Option) (conn *Connector, outErr error) { // nolint: f
 	moduleID := params.Module.Selection.ID
 	if isServiceDeskPlusModule(moduleID) {
 		conn.servicedeskplusAdapter, err = servicedeskplus.NewAdapter(conn.Client, conn.moduleInfo, nil)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Initialize the Mail adapter if applicable.
+	if isMailModule(moduleID) {
+		authMetadata := NewAuthMetadataVars(params.Metadata.Map)
+
+		// The outgoing-webhook signing secret is not known at auth time; it is
+		// delivered on the first webhook request and supplied back as metadata.
+		// hookSecret := params.Metadata.Map[mailWebhookSecretMetadataKey]
+
+		conn.mailAdapter, err = mail.NewAdapter(conn.Client, conn.moduleInfo, authMetadata.MailAccountID)
 		if err != nil {
 			return nil, err
 		}
@@ -129,4 +159,12 @@ func isServiceDeskPlusModule(moduleID common.ModuleID) bool {
 
 func (c *Connector) isServiceDeskPlusModule() bool {
 	return c.servicedeskplusAdapter != nil
+}
+
+func isMailModule(moduleID common.ModuleID) bool {
+	return moduleID == providers.ModuleZohoMail
+}
+
+func (c *Connector) isMailModule() bool {
+	return c.mailAdapter != nil
 }

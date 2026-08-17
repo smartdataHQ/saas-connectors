@@ -4,11 +4,10 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/amp-labs/connectors"
 	"github.com/amp-labs/connectors/common"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockcond"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockserver"
-	"github.com/amp-labs/connectors/test/utils/testroutines"
+	"github.com/amp-labs/connectors/test/utils/testconn"
 	"github.com/amp-labs/connectors/test/utils/testutils"
 )
 
@@ -62,7 +61,7 @@ func TestWrite(t *testing.T) { // nolint:funlen,gocognit,cyclop
 		]
 	}`
 
-	tests := []testroutines.Write{
+	tests := []testconn.TestCaseWrite{
 		{
 			Name:         "Write object must be included",
 			Server:       mockserver.Dummy(),
@@ -91,7 +90,35 @@ func TestWrite(t *testing.T) { // nolint:funlen,gocognit,cyclop
 				},
 				Then: mockserver.Response(http.StatusAccepted, nil),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetWrite,
+			Comparator: testconn.ComparatorSubsetWrite,
+			Expected: &common.WriteResult{
+				Success:  true,
+				RecordId: "",
+				Errors:   nil,
+				Data:     nil,
+			},
+			ExpectedErrs: nil,
+		},
+		{
+			Name: "Create contact write maps cf_* keys to customFieldValues in API body",
+			Input: common.WriteParams{
+				ObjectName: "contacts",
+				RecordData: map[string]any{
+					"email":    "new@example.com",
+					"campaign": map[string]any{"campaignId": "C"},
+					"cf_f1":    "gold",
+				},
+			},
+			Server: mockserver.Conditional{
+				Setup: mockserver.ContentJSON(),
+				If: mockcond.And{
+					mockcond.MethodPOST(),
+					mockcond.Path("/v3/contacts"),
+					mockcond.Body(`{"campaign":{"campaignId":"C"},"customFieldValues":[{"customFieldId":"f1","value":["gold"]}],"email":"new@example.com"}`),
+				},
+				Then: mockserver.Response(http.StatusAccepted, nil),
+			}.Server(),
+			Comparator: testconn.ComparatorSubsetWrite,
 			Expected: &common.WriteResult{
 				Success:  true,
 				RecordId: "",
@@ -111,7 +138,7 @@ func TestWrite(t *testing.T) { // nolint:funlen,gocognit,cyclop
 				},
 				Then: mockserver.Response(http.StatusOK, []byte(contactUpdateResponse)),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetWrite,
+			Comparator: testconn.ComparatorSubsetWrite,
 			Expected: &common.WriteResult{
 				Success:  true,
 				RecordId: "pV3r",
@@ -147,7 +174,7 @@ func TestWrite(t *testing.T) { // nolint:funlen,gocognit,cyclop
 				},
 				Then: mockserver.Response(http.StatusAccepted, nil),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetWrite,
+			Comparator: testconn.ComparatorSubsetWrite,
 			Expected: &common.WriteResult{
 				Success:  true,
 				RecordId: "",
@@ -167,7 +194,7 @@ func TestWrite(t *testing.T) { // nolint:funlen,gocognit,cyclop
 				},
 				Then: mockserver.Response(http.StatusOK, []byte(campaignUpdateResponse)),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetWrite,
+			Comparator: testconn.ComparatorSubsetWrite,
 			Expected: &common.WriteResult{
 				Success:  true,
 				RecordId: "f4PSi",
@@ -213,7 +240,7 @@ func TestWrite(t *testing.T) { // nolint:funlen,gocognit,cyclop
 		t.Run(tt.Name, func(t *testing.T) {
 			t.Parallel()
 
-			tt.Run(t, func() (connectors.WriteConnector, error) {
+			tt.Run(t, func() (testconn.TestableWriter, error) {
 				return constructTestConnector(tt.Server.URL)
 			})
 		})

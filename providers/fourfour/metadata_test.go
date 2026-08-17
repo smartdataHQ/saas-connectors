@@ -2,13 +2,13 @@ package fourfour
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
-	"github.com/amp-labs/connectors"
 	"github.com/amp-labs/connectors/common"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockcond"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockserver"
-	"github.com/amp-labs/connectors/test/utils/testroutines"
+	"github.com/amp-labs/connectors/test/utils/testconn"
 	"github.com/amp-labs/connectors/test/utils/testutils"
 )
 
@@ -18,7 +18,7 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 	contactsResponse := testutils.DataFromFile(t, "contacts.json")
 	leadsResponse := testutils.DataFromFile(t, "leads.json")
 
-	tests := []testroutines.Metadata{
+	tests := []testconn.TestCaseListObjectMetadata{
 		{
 			Name:         "At least one object name must be queried",
 			Input:        nil,
@@ -38,7 +38,7 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 					Then: mockserver.Response(http.StatusOK, leadsResponse),
 				}},
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetMetadata,
+			Comparator: testconn.ComparatorSubsetMetadata,
 			Expected: &common.ListObjectMetadataResult{
 				Result: map[string]common.ObjectMetadata{
 					"contacts": {
@@ -98,23 +98,22 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 		t.Run(tt.Name, func(t *testing.T) {
 			t.Parallel()
 
-			tt.Run(t, func() (connectors.ObjectMetadataConnector, error) {
-				return constructTestConnector(tt.Server.URL)
+			tt.Run(t, func() (testconn.TestableMetadataReader, error) {
+				return constructTestConnector(tt.Server)
 			})
 		})
 	}
 }
 
-func constructTestConnector(serverURL string) (*Connector, error) {
+func constructTestConnector(server *httptest.Server) (*Connector, error) {
 	connector, err := NewConnector(common.ConnectorParams{
-		AuthenticatedClient: http.DefaultClient,
+		AuthenticatedClient: server.Client(),
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	// for testing we want to redirect calls to our mock server
-	connector.SetBaseURL(serverURL)
+	connector.SetUnitTestMockServerBaseURL(server.URL)
 
 	return connector, nil
 }

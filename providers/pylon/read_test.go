@@ -3,12 +3,13 @@ package pylon
 import (
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/amp-labs/connectors"
 	"github.com/amp-labs/connectors/common"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockcond"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockserver"
-	"github.com/amp-labs/connectors/test/utils/testroutines"
+	"github.com/amp-labs/connectors/test/utils/testconn"
 	"github.com/amp-labs/connectors/test/utils/testutils"
 )
 
@@ -19,7 +20,7 @@ func TestRead(t *testing.T) { //nolint:funlen,gocognit,cyclop
 	responseAccountsSecond := testutils.DataFromFile(t, "accounts-second-page.json")
 	responseIssuesEmpty := testutils.DataFromFile(t, "issues-empty-response.json")
 
-	tests := []testroutines.Read{
+	tests := []testconn.TestCaseRead{
 		{
 			Name:         "Read object must be included",
 			Server:       mockserver.Dummy(),
@@ -40,7 +41,7 @@ func TestRead(t *testing.T) { //nolint:funlen,gocognit,cyclop
 				If:    mockcond.Path("/accounts"),
 				Then:  mockserver.Response(http.StatusOK, responseAccountsFirst),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetRead,
+			Comparator: testconn.ComparatorSubsetRead,
 			Expected: &common.ReadResult{
 				Rows: 1,
 				Data: []common.ReadResultRow{{
@@ -72,15 +73,132 @@ func TestRead(t *testing.T) { //nolint:funlen,gocognit,cyclop
 			Input: common.ReadParams{ObjectName: "issues", Fields: connectors.Fields("id", "title")},
 			Server: mockserver.Conditional{
 				Setup: mockserver.ContentJSON(),
-				If:    mockcond.Path("/issues"),
-				Then:  mockserver.Response(http.StatusOK, responseIssuesEmpty),
+				If: mockcond.And{
+					mockcond.Path("/issues/search"),
+					mockcond.MethodPOST(),
+				},
+				Then: mockserver.Response(http.StatusOK, responseIssuesEmpty),
 			}.Server(),
-			Comparator: testroutines.ComparatorPagination,
+			Comparator: testconn.ComparatorPagination,
 			Expected: &common.ReadResult{
 				Rows:     0,
 				NextPage: "",
 				Done:     true,
 			},
+			ExpectedErrs: nil,
+		},
+		{
+			Name:  "Issues are read via POST to the search endpoint",
+			Input: common.ReadParams{ObjectName: "issues", Fields: connectors.Fields("id", "title")},
+			Server: mockserver.Conditional{
+				Setup: mockserver.ContentJSON(),
+				If: mockcond.And{
+					mockcond.Path("/issues/search"),
+					mockcond.MethodPOST(),
+					// filter is optional, and is omitted when no window is requested.
+					mockcond.Body(`{"limit":999}`),
+				},
+				Then: mockserver.Response(http.StatusOK, responseIssuesEmpty),
+			}.Server(),
+			Comparator:   testconn.ComparatorPagination,
+			Expected:     &common.ReadResult{Rows: 0, NextPage: "", Done: true},
+			ExpectedErrs: nil,
+		},
+		{
+			Name: "Since alone filters on updated_at with a lower bound",
+			Input: common.ReadParams{
+				ObjectName: "issues",
+				Fields:     connectors.Fields("id", "title"),
+				Since:      time.Unix(1754518014, 0),
+			},
+			Server: mockserver.Conditional{
+				Setup: mockserver.ContentJSON(),
+				If: mockcond.And{
+					mockcond.Path("/issues/search"),
+					mockcond.MethodPOST(),
+					mockcond.Body(`{
+						"limit":999,
+						"filter":{
+							"operator":"and",
+							"subfilters":[
+								{"field":"updated_at","operator":"time_is_after","value":"2025-08-06T22:06:54Z"}
+							]
+						}}`),
+				},
+				Then: mockserver.Response(http.StatusOK, responseIssuesEmpty),
+			}.Server(),
+			Comparator:   testconn.ComparatorPagination,
+			Expected:     &common.ReadResult{Rows: 0, NextPage: "", Done: true},
+			ExpectedErrs: nil,
+		},
+		{
+			Name: "Since and Until filter on updated_at with both bounds",
+			Input: common.ReadParams{
+				ObjectName: "issues",
+				Fields:     connectors.Fields("id", "title"),
+				Since:      time.Unix(1754518014, 0),
+				Until:      time.Unix(1754518016, 0),
+			},
+			Server: mockserver.Conditional{
+				Setup: mockserver.ContentJSON(),
+				If: mockcond.And{
+					mockcond.Path("/issues/search"),
+					mockcond.MethodPOST(),
+					mockcond.Body(`{
+						"limit":999,
+						"filter":{
+							"operator":"and",
+							"subfilters":[
+								{"field":"updated_at","operator":"time_is_after","value":"2025-08-06T22:06:54Z"},
+								{"field":"updated_at","operator":"time_is_before","value":"2025-08-06T22:06:56Z"}
+							]
+						}}`),
+				},
+				Then: mockserver.Response(http.StatusOK, responseIssuesEmpty),
+			}.Server(),
+			Comparator:   testconn.ComparatorPagination,
+			Expected:     &common.ReadResult{Rows: 0, NextPage: "", Done: true},
+			ExpectedErrs: nil,
+		},
+		{
+			Name: "PageSize sets the limit, and is clamped to the endpoint maximum",
+			Input: common.ReadParams{
+				ObjectName: "issues",
+				Fields:     connectors.Fields("id", "title"),
+				PageSize:   5000,
+			},
+			Server: mockserver.Conditional{
+				Setup: mockserver.ContentJSON(),
+				If: mockcond.And{
+					mockcond.Path("/issues/search"),
+					mockcond.MethodPOST(),
+					// 5000 is above what search accepts, so it falls back to the maximum.
+					mockcond.Body(`{"limit":999}`),
+				},
+				Then: mockserver.Response(http.StatusOK, responseIssuesEmpty),
+			}.Server(),
+			Comparator:   testconn.ComparatorPagination,
+			Expected:     &common.ReadResult{Rows: 0, NextPage: "", Done: true},
+			ExpectedErrs: nil,
+		},
+		{
+			Name: "PageSize below the maximum is passed through",
+			Input: common.ReadParams{
+				ObjectName: "issues",
+				Fields:     connectors.Fields("id", "title"),
+				PageSize:   2,
+			},
+			Server: mockserver.Conditional{
+				Setup: mockserver.ContentJSON(),
+				If: mockcond.And{
+					mockcond.Path("/issues/search"),
+					mockcond.MethodPOST(),
+					mockcond.Body(`{"limit":2}`),
+				},
+				Then: mockserver.Response(http.StatusOK, responseIssuesEmpty),
+			}.Server(),
+			Comparator:   testconn.ComparatorPagination,
+			Expected:     &common.ReadResult{Rows: 0, NextPage: "", Done: true},
 			ExpectedErrs: nil,
 		},
 		{
@@ -94,7 +212,7 @@ func TestRead(t *testing.T) { //nolint:funlen,gocognit,cyclop
 				If:    mockcond.Path("/accounts"),
 				Then:  mockserver.Response(http.StatusOK, responseAccountsSecond),
 			}.Server(),
-			Comparator: testroutines.ComparatorPagination,
+			Comparator: testconn.ComparatorPagination,
 			Expected: &common.ReadResult{
 				Rows:     1,
 				NextPage: "",
@@ -109,7 +227,7 @@ func TestRead(t *testing.T) { //nolint:funlen,gocognit,cyclop
 		t.Run(tt.Name, func(t *testing.T) {
 			t.Parallel()
 
-			tt.Run(t, func() (connectors.ReadConnector, error) {
+			tt.Run(t, func() (testconn.TestableReader, error) {
 				return constructTestConnector(tt.Server.URL)
 			})
 		})

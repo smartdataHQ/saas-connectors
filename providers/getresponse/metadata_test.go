@@ -1,19 +1,21 @@
 package getresponse
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
-	"github.com/amp-labs/connectors"
 	"github.com/amp-labs/connectors/common"
 	"github.com/amp-labs/connectors/test/utils/mockutils"
+	"github.com/amp-labs/connectors/test/utils/mockutils/mockcond"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockserver"
-	"github.com/amp-labs/connectors/test/utils/testroutines"
+	"github.com/amp-labs/connectors/test/utils/testconn"
 )
 
 func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop
 	t.Parallel()
 
-	tests := []testroutines.Metadata{
+	tests := []testconn.TestCaseListObjectMetadata{
 		{
 			Name:         "At least one object name must be queried",
 			Input:        nil,
@@ -24,7 +26,7 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop
 			Name:       "Unknown object requested",
 			Input:      []string{"nonexistent_object"},
 			Server:     mockserver.Dummy(),
-			Comparator: testroutines.ComparatorSubsetMetadata,
+			Comparator: testconn.ComparatorSubsetMetadata,
 			Expected: &common.ListObjectMetadataResult{
 				Errors: map[string]error{
 					"nonexistent_object": common.ErrObjectNotSupported,
@@ -34,8 +36,8 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop
 		{
 			Name:       "Successfully describe contacts object with metadata",
 			Input:      []string{"contacts"},
-			Server:     mockserver.Dummy(),
-			Comparator: testroutines.ComparatorSubsetMetadata,
+			Server:     testServerCustomFieldsListJSON(`[]`),
+			Comparator: testconn.ComparatorSubsetMetadata,
 			Expected: &common.ListObjectMetadataResult{
 				Result: map[string]common.ObjectMetadata{
 					"contacts": {
@@ -51,17 +53,61 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop
 				},
 			},
 		},
+		{
+			Name:       "Describe contacts merges custom field definitions",
+			Input:      []string{"contacts"},
+			Server:     testServerCustomFieldsListJSON(`[{"customFieldId":"fld1","name":"Tier","fieldType":"text","valueType":"single_select","values":["gold","silver"]}]`),
+			Comparator: testconn.ComparatorSubsetMetadata,
+			Expected: &common.ListObjectMetadataResult{
+				Result: map[string]common.ObjectMetadata{
+					"contacts": {
+						DisplayName: "Contacts",
+						Fields: map[string]common.FieldMetadata{
+							"email": {
+								DisplayName:  "email",
+								ValueType:    "string",
+								ProviderType: "string",
+							},
+							"cf_fld1": {
+								DisplayName:  "Tier",
+								ValueType:    common.ValueTypeSingleSelect,
+								ProviderType: "single_select",
+								Values: []common.FieldValue{
+									{Value: "gold", DisplayValue: "gold"},
+									{Value: "silver", DisplayValue: "silver"},
+								},
+								IsCustom: new(true),
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.Name, func(t *testing.T) {
 			t.Parallel()
 
-			tt.Run(t, func() (connectors.ObjectMetadataConnector, error) {
+			tt.Run(t, func() (testconn.TestableMetadataReader, error) {
 				return constructTestConnector(tt.Server.URL)
 			})
 		})
 	}
+}
+
+// testServerCustomFieldsListJSON serves GET /v3/custom-fields with the given JSON body.
+// Other requests get an empty custom-field list so ListObjectMetadata does not hit a teapot dummy.
+func testServerCustomFieldsListJSON(customFieldsJSON string) *httptest.Server {
+	return mockserver.Conditional{
+		Setup: mockserver.ContentJSON(),
+		If: mockcond.And{
+			mockcond.MethodGET(),
+			mockcond.Path("/v3/custom-fields"),
+		},
+		Then: mockserver.Response(http.StatusOK, []byte(customFieldsJSON)),
+		Else: mockserver.Response(http.StatusOK, []byte(`[]`)),
+	}.Server()
 }
 
 func constructTestConnector(serverURL string) (*Connector, error) {

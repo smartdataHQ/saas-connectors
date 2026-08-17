@@ -3,29 +3,40 @@ package gong
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/amp-labs/connectors/common"
+	"github.com/amp-labs/connectors/common/logging"
+	"github.com/amp-labs/connectors/common/urlbuilder"
+	"github.com/amp-labs/connectors/internal/datautils"
 	"github.com/amp-labs/connectors/providers/gong/metadata"
 )
 
 // readFlows handles the special case for reading flows which requires flowOwnerEmail query param.
 // It fetches all users first, then iterates through their emails to fetch flows for each user.
+// Flows are aggregated across users and deduplicated by id, because shared/company flows may
+// appear in multiple users' result sets while personal flows are unique to their owner.
 // Some users may not have engage license or may not be added to flows, so we handle errors gracefully.
 // ref: https://gong.app.gong.io/settings/api/documentation#get-/v2/flows
-func (c *Connector) readFlows(ctx context.Context, config common.ReadParams) (*common.ReadResult, error) { // nolint:cyclop,lll
+func (c *Connector) readFlows(ctx context.Context, config common.ReadParams) (*common.ReadResult, error) { // nolint:lll,cyclop,funlen
 	users, err := c.fetchAllUsers(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch users: %w", err)
 	}
 
 	if len(users) == 0 {
-		return &common.ReadResult{
-			Rows:     0,
-			Data:     nil,
-			NextPage: "",
-			Done:     true,
-		}, nil
+		return emptyFlowsResult(), nil
 	}
+
+	includeUserAssoc := wantsUserAssociation(config.AssociatedObjects)
+
+	readOpts, isReadOptsOk := config.Opts.(ReadParamsOpts)
+	readAllUsers := isReadOptsOk && readOpts.ReadFlowsForAllUsers
+
+	// Collect every user's flows into one map keyed by flow id.
+	// Company and shared flows show up for many users, so the map drops the repeats.
+	aggregated := make(map[string]common.ReadResultRow)
 
 	for _, user := range users {
 		userEmail, ok := user.Raw["emailAddress"].(string)
@@ -33,58 +44,167 @@ func (c *Connector) readFlows(ctx context.Context, config common.ReadParams) (*c
 			continue
 		}
 
-		flows, err := c.fetchFlowsForUser(ctx, userEmail, config)
-		if err != nil || len(flows) == 0 {
-			// Some users may not have engage license or may not be added to flows
-			// we ignore these errors and continue
+		// Only fetch flows for active users.
+		if active, _ := user.Raw["active"].(bool); !active {
 			continue
 		}
 
-		// Return as soon as we find flows for a user
-		return &common.ReadResult{
-			Rows:     int64(len(flows)),
-			Data:     flows,
-			NextPage: "",
-			Done:     true,
-		}, nil
+		flows, err := c.fetchFlowsForUser(ctx, userEmail, config)
+		if err != nil {
+			// A user without an engage license (or not added to any flow) errors
+			// here. We skip them so one user can't fail the whole sync, and log it
+			// so a genuine failure (5xx / rate-limit / network) is still visible.
+			logging.Logger(ctx).Warn("could not fetch flows for user, skipping",
+				"user", userEmail, "error", err.Error())
+
+			continue
+		}
+
+		if len(flows) == 0 {
+			continue
+		}
+
+		mergeUserFlows(aggregated, flows, user, includeUserAssoc, readAllUsers)
+
+		if !readAllUsers {
+			// When ReadFlowsForAllUsers is false,
+			// We only read flows with visibility "Company", so we only need to read flows from one user.
+			// We treat failed readOpts assertion as false ReadFlowsForAllUsers.
+			break
+		}
 	}
 
+	if len(aggregated) == 0 {
+		return emptyFlowsResult(), nil
+	}
+
+	data := make([]common.ReadResultRow, 0, len(aggregated))
+
+	for _, flow := range aggregated {
+		data = append(data, flow)
+	}
+
+	// Stable order: map iteration is random in Go.
+	sort.Slice(data, func(i, j int) bool {
+		return data[i].Id < data[j].Id
+	})
+
 	return &common.ReadResult{
-		Rows:     0,
-		Data:     nil,
+		Rows:     int64(len(data)),
+		Data:     data,
 		NextPage: "",
 		Done:     true,
 	}, nil
 }
 
-// fetchAllUsers retrieves all users from the /users endpoint.
+func emptyFlowsResult() *common.ReadResult {
+	return &common.ReadResult{
+		Rows:     0,
+		Data:     nil,
+		NextPage: "",
+		Done:     true,
+	}
+}
+
+// mergeUserFlows adds a user's flows to the aggregate, keeping one row per flow
+// id and attaching every user the flow shows up for to its "users" association
+// when requested.
+//
+// Gong reports visibility relative to the queried email: a flow reads "Personal"
+// only in its owner's result set and "Shared" for everyone else who can see it.
+// The same flow id therefore shows up in several users' results with different
+// visibility, and users are fetched in an arbitrary order. We keep one row per id
+// and accumulate users onto it: the owner (their copy says "Personal") plus
+// everyone it is shared with (their copy says "Shared"). For the row's own fields
+// we prefer the owner's "Personal" copy, so visibility reads "Personal" whenever
+// an owner exists no matter what order users come back in. Company flows aren't
+// tied to specific users, so they get no association.
+//
+// When readAllUsers is false we are in company-only mode, so flows that aren't
+// "Company" visibility are dropped.
+func mergeUserFlows(
+	aggregated map[string]common.ReadResultRow,
+	flows []common.ReadResultRow,
+	user common.ReadResultRow,
+	includeUserAssoc bool,
+	readAllUsers bool,
+) {
+	for _, flow := range flows {
+		visibility, _ := flow.Raw["visibility"].(string)
+
+		// Company-only mode: skip anything that isn't a company flow.
+		if !readAllUsers && !strings.EqualFold(visibility, "Company") {
+			continue
+		}
+
+		ownsFlow := strings.EqualFold(visibility, "Personal")
+
+		// We store one row per flow id. The same flow can arrive more than once
+		// (e.g. "Shared" from one user and "Personal" from its owner). We want the
+		// owner's copy so visibility shows "Personal", but we must not lose the
+		// users we already attached from the earlier copies.
+		row, seen := aggregated[flow.Id]
+		switch {
+		case !seen:
+			row = flow
+		case ownsFlow:
+			users := row.Associations
+			row = flow
+			row.Associations = users
+		}
+
+		// Attach this user to Personal and Shared flows.
+		if includeUserAssoc && !strings.EqualFold(visibility, "Company") {
+			attachUserToFlow(&row, user)
+		}
+
+		aggregated[flow.Id] = row
+	}
+}
+
+// wantsUserAssociation reports whether the caller asked for user records to be
+// attached alongside each flow.
+func wantsUserAssociation(associatedObjects []string) bool {
+	for _, name := range associatedObjects {
+		switch strings.ToLower(name) {
+		case "user", "users":
+			return true
+		}
+	}
+
+	return false
+}
+
+// attachUserToFlow appends a user to the flow's "users" association. The caller
+// decides which flows qualify; today that is Personal (the owner) and Shared
+// (users it is shared with), but not Company.
+func attachUserToFlow(flow *common.ReadResultRow, user common.ReadResultRow) {
+	if flow.Associations == nil {
+		flow.Associations = make(map[string][]common.Association)
+	}
+
+	flow.Associations[objectNameUsers] = append(
+		flow.Associations[objectNameUsers],
+		common.Association{
+			ObjectId: user.Id,
+			Raw:      user.Raw,
+		},
+	)
+}
+
+// fetchAllUsers retrieves every user from the /users endpoint, following
+// pagination so users beyond the first page are not missed.
 func (c *Connector) fetchAllUsers(ctx context.Context) ([]common.ReadResultRow, error) {
 	url, err := c.getReadURL(objectNameUsers)
 	if err != nil {
 		return nil, err
 	}
 
-	res, err := c.Client.Get(ctx, url.String())
-	if err != nil {
-		return nil, err
-	}
-
-	responseFieldName := metadata.Schemas.LookupArrayFieldName(c.Module.ID, objectNameUsers)
-
-	result, err := common.ParseResult(res,
-		common.ExtractRecordsFromPath(responseFieldName),
-		getNextRecordsURL,
-		common.GetMarshaledData,
-		nil,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return result.Data, nil
+	return c.fetchAllPages(ctx, url, objectNameUsers, nil)
 }
 
-// fetchFlowsForUser fetches flows for a specific user email.
+// fetchFlowsForUser fetches every flow for a specific user email, following
+// pagination so a user with many flows does not lose the overflow.
 func (c *Connector) fetchFlowsForUser(ctx context.Context, userEmail string, config common.ReadParams,
 ) ([]common.ReadResultRow, error) {
 	url, err := c.getReadURL(objectNameFlows)
@@ -94,22 +214,46 @@ func (c *Connector) fetchFlowsForUser(ctx context.Context, userEmail string, con
 
 	url.WithQueryParam("flowOwnerEmail", userEmail)
 
-	res, err := c.Client.Get(ctx, url.String())
-	if err != nil {
-		return nil, err
+	return c.fetchAllPages(ctx, url, objectNameFlows, config.Fields)
+}
+
+// fetchAllPages issues GET requests against url, following Gong's records.cursor
+// until none is returned, and accumulates every page of rows.
+func (c *Connector) fetchAllPages(
+	ctx context.Context,
+	url *urlbuilder.URL,
+	objectName string,
+	fields datautils.Set[string],
+) ([]common.ReadResultRow, error) {
+	responseFieldName := metadata.Schemas.LookupArrayFieldName(c.Module.ID, objectName)
+
+	var rows []common.ReadResultRow
+
+	for {
+		res, err := c.Client.Get(ctx, url.String())
+		if err != nil {
+			return nil, err
+		}
+
+		result, err := common.ParseResult(res,
+			common.ExtractRecordsFromPath(responseFieldName),
+			getNextRecordsURL,
+			common.GetMarshaledData,
+			fields,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		rows = append(rows, result.Data...)
+
+		if result.NextPage == "" {
+			break
+		}
+
+		// Re-request with the next cursor; flowOwnerEmail (if set) is preserved on url.
+		url.WithQueryParam("cursor", result.NextPage.String())
 	}
 
-	responseFieldName := metadata.Schemas.LookupArrayFieldName(c.Module.ID, objectNameFlows)
-
-	result, err := common.ParseResult(res,
-		common.ExtractRecordsFromPath(responseFieldName),
-		getNextRecordsURL,
-		common.GetMarshaledData,
-		config.Fields,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return result.Data, nil
+	return rows, nil
 }

@@ -80,7 +80,7 @@ func Pluralize(displayName string) string {
 }
 
 // ReadOperationMethodFilter callback that filters REST operations based on endpoint parameters.
-type ReadOperationMethodFilter func(objectName string, operation *openapi3.Operation) bool
+type ReadOperationMethodFilter func(objectPath string, operation *openapi3.Operation) bool
 
 // OnlyOptionalQueryParameters operation must include only optional query parameters.
 func OnlyOptionalQueryParameters(objectName string, operation *openapi3.Operation) bool {
@@ -176,7 +176,7 @@ func createParams(opts []Option) *parameters {
 
 	if params.autoSelectArrayItem == nil {
 		// By default, auto selection is off.
-		params.autoSelectArrayItem = goutils.Pointer(false)
+		params.autoSelectArrayItem = new(false)
 	}
 
 	if params.duplicatesResolver == nil {
@@ -235,7 +235,7 @@ func WithPropertyFlattening(propertyFlattener PropertyFlattener) Option {
 // array property and each array represents the API resource schema, this option should be selected.
 func WithArrayItemAutoSelection() Option {
 	return func(params *parameters) {
-		params.autoSelectArrayItem = goutils.Pointer(true)
+		params.autoSelectArrayItem = new(true)
 	}
 }
 

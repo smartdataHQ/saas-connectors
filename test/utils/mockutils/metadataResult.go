@@ -2,9 +2,10 @@ package mockutils
 
 import (
 	"errors"
-	"reflect"
+	"fmt"
 
 	"github.com/amp-labs/connectors/common"
+	"github.com/amp-labs/connectors/test/utils/testutils"
 )
 
 var MetadataResultComparator = metadataResultComparator{}
@@ -12,49 +13,64 @@ var MetadataResultComparator = metadataResultComparator{}
 type metadataResultComparator struct{}
 
 // SubsetFields checks that expected ListObjectMetadataResult fields are a subset of actual metadata result.
-func (metadataResultComparator) SubsetFields(actual, expected *common.ListObjectMetadataResult) bool {
+func (metadataResultComparator) SubsetFields(
+	actual, expected *common.ListObjectMetadataResult,
+) *testutils.CompareResult {
+	result := testutils.NewCompareResult()
 	for objectName, expectedMetadata := range expected.Result {
 		actualMetadata, ok := actual.Result[objectName]
 		if !ok {
-			return false
+			result.AddDiff("Result[%s] missing", objectName)
+			continue
 		}
 
-		if actualMetadata.DisplayName != expectedMetadata.DisplayName {
-			return false
-		}
+		result.Assert(fmt.Sprintf("Result[%s].DisplayName", objectName),
+			expectedMetadata.DisplayName, actualMetadata.DisplayName)
 
-		for k, v := range expectedMetadata.Fields {
-			value, ok := actualMetadata.Fields[k]
+		for k, expectedValue := range expectedMetadata.Fields {
+			actualValue, ok := actualMetadata.Fields[k]
 			if !ok {
-				return false
+				result.AddDiff("Result[%s].Fields[%s] missing", objectName, k)
+				continue
 			}
 
-			if !reflect.DeepEqual(value, v) {
-				return false
-			}
+			result.Assert(fmt.Sprintf("Result[%s].Fields[%s]", objectName, k),
+				expectedValue, actualValue)
 		}
 
 		// For backwards compatibility the FieldsMap is checked alongside
-		for k, v := range expectedMetadata.FieldsMap {
-			value, ok := actualMetadata.FieldsMap[k]
+		for k, expectedValue := range expectedMetadata.FieldsMap {
+			actualValue, ok := actualMetadata.FieldsMap[k]
 			if !ok {
-				return false
+				result.AddDiff("Result[%s].FieldsMap[%s] missing", objectName, k)
+				continue
 			}
 
-			if value != v {
-				return false
-			}
+			result.Assert(fmt.Sprintf("Result[%s].FieldsMap[%s]", objectName, k),
+				expectedValue, actualValue)
 		}
 	}
 
-	return true
+	return result
 }
 
-func (metadataResultComparator) SubsetErrors(actual, expected *common.ListObjectMetadataResult) bool {
+func (metadataResultComparator) SubsetErrors(
+	actual, expected *common.ListObjectMetadataResult,
+) *testutils.CompareResult {
+	result := testutils.NewCompareResult()
+
+	if len(actual.Errors) != 0 && len(expected.Errors) == 0 {
+		result.AddDiff("Errors is non empty, but no expectation is set. Specify at least one error.")
+		for name, err := range actual.Errors {
+			result.AddDiff("Consider \"%v\": %v", name, err)
+		}
+	}
+
 	for objectName, expectedError := range expected.Errors {
 		actualError, ok := actual.Errors[objectName]
 		if !ok {
-			return false
+			result.AddDiff("Errors[%s] missing", objectName)
+			continue
 		}
 
 		// The tester may specify ExpectedSubsetErrors with a list of errors to be present inside actualError.
@@ -66,10 +82,9 @@ func (metadataResultComparator) SubsetErrors(actual, expected *common.ListObject
 
 		if !errorsAre(actualError, expectedErrors) {
 			// Subset of errors is not found under actual error for current object name.
-			// No need to check other object names.
-			return false
+			result.Assert(fmt.Sprintf("Errors[%s]", objectName), expectedErrors, actualError)
 		}
 	}
 
-	return true
+	return result
 }

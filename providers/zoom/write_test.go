@@ -4,11 +4,10 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/amp-labs/connectors"
 	"github.com/amp-labs/connectors/common"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockcond"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockserver"
-	"github.com/amp-labs/connectors/test/utils/testroutines"
+	"github.com/amp-labs/connectors/test/utils/testconn"
 	"github.com/amp-labs/connectors/test/utils/testutils"
 )
 
@@ -20,7 +19,7 @@ func TestWrite(t *testing.T) { //nolint:funlen
 	responseCreateUser := testutils.DataFromFile(t, "./write/create-users.json")
 	responseCreateContactsGroup := testutils.DataFromFile(t, "./write/create-contacts-groups.json")
 
-	tests := []testroutines.Write{
+	tests := []testconn.TestCaseWrite{
 		{
 			Name:         "Write object must be included",
 			Server:       mockserver.Dummy(),
@@ -51,7 +50,7 @@ func TestWrite(t *testing.T) { //nolint:funlen
 				If:    mockcond.MethodPOST(),
 				Then:  mockserver.Response(http.StatusOK, responseCreateTrackingField),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetWrite,
+			Comparator: testconn.ComparatorSubsetWrite,
 			Expected: &common.WriteResult{
 				Success:  true,
 				RecordId: "a32CJji-weJ92",
@@ -74,7 +73,7 @@ func TestWrite(t *testing.T) { //nolint:funlen
 				If:    mockcond.MethodPUT(),
 				Then:  mockserver.Response(http.StatusOK, responseUpdateTrackingField),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetWrite,
+			Comparator: testconn.ComparatorSubsetWrite,
 			Expected: &common.WriteResult{
 				Success:  true,
 				RecordId: "a32CJji-weJ92",
@@ -96,7 +95,7 @@ func TestWrite(t *testing.T) { //nolint:funlen
 				If:    mockcond.MethodPOST(),
 				Then:  mockserver.Response(http.StatusOK, responseCreateUser),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetWrite,
+			Comparator: testconn.ComparatorSubsetWrite,
 			Expected: &common.WriteResult{
 				Success:  true,
 				RecordId: "KDcuGIm1QgePTO8WbOqwIQ",
@@ -119,7 +118,7 @@ func TestWrite(t *testing.T) { //nolint:funlen
 				If:    mockcond.MethodPOST(),
 				Then:  mockserver.Response(http.StatusOK, responseCreateContactsGroup),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetWrite,
+			Comparator: testconn.ComparatorSubsetWrite,
 			Expected: &common.WriteResult{
 				Success:  true,
 				RecordId: "A4ql1FjgL913r",
@@ -137,7 +136,7 @@ func TestWrite(t *testing.T) { //nolint:funlen
 	for _, tt := range tests {
 		t.Run(tt.Name, func(t *testing.T) {
 			t.Parallel()
-			tt.Run(t, func() (connectors.WriteConnector, error) {
+			tt.Run(t, func() (testconn.TestableWriter, error) {
 				return constructTestConnector(tt.Server.URL)
 			})
 		})

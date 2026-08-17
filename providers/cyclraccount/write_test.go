@@ -4,11 +4,10 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/amp-labs/connectors"
 	"github.com/amp-labs/connectors/common"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockcond"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockserver"
-	"github.com/amp-labs/connectors/test/utils/testroutines"
+	"github.com/amp-labs/connectors/test/utils/testconn"
 )
 
 func TestWrite(t *testing.T) { //nolint:funlen
@@ -24,7 +23,7 @@ func TestWrite(t *testing.T) { //nolint:funlen
 		"CreatedOnUtc":"2026-04-18T10:00:00Z"
 	}`)
 
-	tests := []testroutines.Write{
+	tests := []testconn.TestCaseWrite{
 		{
 			Name: "Install from template returns new Cycle Id",
 			Input: common.WriteParams{
@@ -41,7 +40,7 @@ func TestWrite(t *testing.T) { //nolint:funlen
 				},
 				Then: mockserver.Response(http.StatusOK, installedCycle),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetWrite,
+			Comparator: testconn.ComparatorSubsetWrite,
 			Expected: &common.WriteResult{
 				Success:  true,
 				RecordId: "c0000001-0000-0000-0000-000000000001",
@@ -65,7 +64,7 @@ func TestWrite(t *testing.T) { //nolint:funlen
 				},
 				Then: mockserver.Response(http.StatusNoContent),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetWrite,
+			Comparator: testconn.ComparatorSubsetWrite,
 			Expected: &common.WriteResult{
 				Success:  true,
 				RecordId: "c0000001-0000-0000-0000-000000000001",
@@ -104,7 +103,7 @@ func TestWrite(t *testing.T) { //nolint:funlen
 				},
 				Then: mockserver.Response(http.StatusOK, []byte(`{"Id":"p1"}`)),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetWrite,
+			Comparator: testconn.ComparatorSubsetWrite,
 			Expected: &common.WriteResult{
 				Success:  true,
 				RecordId: "p1",
@@ -130,8 +129,8 @@ func TestWrite(t *testing.T) { //nolint:funlen
 				ObjectName: objectNameStepFieldMappings,
 				RecordId:   "f1",
 				RecordData: map[string]any{
-					"StepId":      "s1",
-					"MappingType": "StepOutput",
+					"StepId":          "s1",
+					"MappingType":     "StepOutput",
 					"SourceStepId":    "upstream",
 					"SourceFieldName": "email",
 				},
@@ -144,7 +143,7 @@ func TestWrite(t *testing.T) { //nolint:funlen
 				},
 				Then: mockserver.Response(http.StatusOK, []byte(`{"Id":"f1"}`)),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetWrite,
+			Comparator: testconn.ComparatorSubsetWrite,
 			Expected: &common.WriteResult{
 				Success:  true,
 				RecordId: "f1",
@@ -169,7 +168,7 @@ func TestWrite(t *testing.T) { //nolint:funlen
 				},
 				Then: mockserver.Response(http.StatusOK, []byte(`{"Id":"ac1"}`)),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetWrite,
+			Comparator: testconn.ComparatorSubsetWrite,
 			Expected: &common.WriteResult{
 				Success:  true,
 				RecordId: "ac1",
@@ -201,7 +200,7 @@ func TestWrite(t *testing.T) { //nolint:funlen
 				},
 				Then: mockserver.Response(http.StatusNoContent),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetWrite,
+			Comparator: testconn.ComparatorSubsetWrite,
 			Expected: &common.WriteResult{
 				Success:  true,
 				RecordId: "c0000001-0000-0000-0000-000000000001",
@@ -215,7 +214,7 @@ func TestWrite(t *testing.T) { //nolint:funlen
 		t.Run(tt.Name, func(t *testing.T) {
 			t.Parallel()
 
-			tt.Run(t, func() (connectors.WriteConnector, error) {
+			tt.Run(t, func() (testconn.TestableWriter, error) {
 				return constructTestConnector(tt.Server.URL)
 			})
 		})

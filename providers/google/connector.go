@@ -9,6 +9,7 @@ import (
 	"github.com/amp-labs/connectors/providers"
 	"github.com/amp-labs/connectors/providers/google/internal/calendar"
 	"github.com/amp-labs/connectors/providers/google/internal/contacts"
+	"github.com/amp-labs/connectors/providers/google/internal/core"
 	"github.com/amp-labs/connectors/providers/google/internal/mail"
 )
 
@@ -16,6 +17,13 @@ var (
 	_ connectors.SubscribeConnector              = &Connector{}
 	_ connectors.SubscriptionMaintainerConnector = &Connector{}
 )
+
+// ReadParamsOpts are Google-specific options for common.ReadParams.Opts.
+// Assign a value of this type to ReadParams.Opts to opt into bespoke read behavior.
+//
+// It is defined in the shared internal/core package so individual Google modules
+// can consume it without importing this package (which would create a cycle).
+type ReadParamsOpts = core.ReadParamsOpts
 
 // GmailSubscribeRequest is the request payload for Gmail watch subscriptions.
 type GmailSubscribeRequest = mail.WatchRequest
@@ -35,8 +43,18 @@ type Connector struct {
 	Mail     *mail.Adapter
 }
 
+// NewConnector creates a new Google connector. It defaults to the Google
+// provider; use NewConnectorForProvider for twin providers (e.g. GoogleWorkspaceDelegation)
+// that share the same implementation but differ in auth scheme.
 func NewConnector(params common.ConnectorParams) (*Connector, error) {
-	connector, err := components.Initialize(providers.Google, params,
+	return NewConnectorForProvider(providers.Google, params)
+}
+
+// NewConnectorForProvider creates a new Google connector under the given
+// provider name. This allows twin providers like GoogleWorkspaceDelegation to reuse the
+// same connector implementation with a different auth configuration.
+func NewConnectorForProvider(provider providers.Provider, params common.ConnectorParams) (*Connector, error) {
+	connector, err := components.Initialize(provider, params,
 		func(base *components.Connector) (*Connector, error) {
 			return &Connector{Connector: base}, nil
 		},
@@ -145,6 +163,10 @@ func (c *Connector) Subscribe(
 	ctx context.Context,
 	params common.SubscribeParams,
 ) (*common.SubscriptionResult, error) {
+	if c.Calendar != nil {
+		return c.Calendar.Subscribe(ctx, params)
+	}
+
 	if c.Mail != nil {
 		return c.Mail.Subscribe(ctx, params)
 	}
@@ -157,6 +179,10 @@ func (c *Connector) UpdateSubscription(
 	params common.SubscribeParams,
 	previousResult *common.SubscriptionResult,
 ) (*common.SubscriptionResult, error) {
+	if c.Calendar != nil {
+		return c.Calendar.UpdateSubscription(ctx, params, previousResult)
+	}
+
 	if c.Mail != nil {
 		return c.Mail.UpdateSubscription(ctx, params, previousResult)
 	}
@@ -168,6 +194,10 @@ func (c *Connector) DeleteSubscription(
 	ctx context.Context,
 	previousResult common.SubscriptionResult,
 ) error {
+	if c.Calendar != nil {
+		return c.Calendar.DeleteSubscription(ctx, previousResult)
+	}
+
 	if c.Mail != nil {
 		return c.Mail.DeleteSubscription(ctx, previousResult)
 	}
@@ -176,6 +206,10 @@ func (c *Connector) DeleteSubscription(
 }
 
 func (c *Connector) EmptySubscriptionParams() *common.SubscribeParams {
+	if c.Calendar != nil {
+		return c.Calendar.EmptySubscriptionParams()
+	}
+
 	if c.Mail != nil {
 		return c.Mail.EmptySubscriptionParams()
 	}
@@ -184,6 +218,10 @@ func (c *Connector) EmptySubscriptionParams() *common.SubscribeParams {
 }
 
 func (c *Connector) EmptySubscriptionResult() *common.SubscriptionResult {
+	if c.Calendar != nil {
+		return c.Calendar.EmptySubscriptionResult()
+	}
+
 	if c.Mail != nil {
 		return c.Mail.EmptySubscriptionResult()
 	}
@@ -196,6 +234,10 @@ func (c *Connector) VerifyWebhookMessage(
 	request *common.WebhookRequest,
 	params *common.VerificationParams,
 ) (bool, error) {
+	if c.Calendar != nil {
+		return c.Calendar.VerifyWebhookMessage(ctx, request, params)
+	}
+
 	if c.Mail != nil {
 		return c.Mail.VerifyWebhookMessage(ctx, request, params)
 	}
@@ -209,6 +251,10 @@ func (c *Connector) GetRecordsByIds(ctx context.Context, // nolint: revive
 	fields []string,
 	associations []string,
 ) ([]common.ReadResultRow, error) {
+	if c.Calendar != nil {
+		return c.Calendar.GetRecordsByIds(ctx, objectName, recordIds, fields, associations)
+	}
+
 	if c.Mail != nil {
 		return c.Mail.GetRecordsByIds(ctx, objectName, recordIds, fields, associations)
 	}
@@ -221,6 +267,10 @@ func (c *Connector) RunScheduledMaintenance(
 	params common.SubscribeParams,
 	previousResult *common.SubscriptionResult,
 ) (*common.SubscriptionResult, error) {
+	if c.Calendar != nil {
+		return c.Calendar.RunScheduledMaintenance(ctx, params, previousResult)
+	}
+
 	if c.Mail != nil {
 		return c.Mail.RunScheduledMaintenance(ctx, params, previousResult)
 	}
@@ -228,13 +278,60 @@ func (c *Connector) RunScheduledMaintenance(
 	return nil, common.ErrNotImplemented
 }
 
+// Re-exports of Google Calendar subscribe types so external callers can use them
+// without importing the internal calendar package.
+type (
+	CalendarWatchRequest       = calendar.WatchRequest
+	CalendarWatchResponse      = calendar.WatchResponse
+	CalendarSubscriptionResult = calendar.CalendarSubscriptionResult
+	CalendarVerificationParams = calendar.VerificationParams
+	CalendarSubscriptionEvent  = calendar.SubscriptionEvent
+)
+
+// CalendarSubscriptionEventsFromRecords classifies GetRecordsByIds rows into
+// create/update/delete events. updatedMin must be the same checkpoint passed to
+// GetRecordsByIds (recordIds[0]).
+func CalendarSubscriptionEventsFromRecords(
+	rows []common.ReadResultRow, updatedMin string,
+) []CalendarSubscriptionEvent {
+	return calendar.SubscriptionEventsFromRecords(rows, updatedMin)
+}
+
+// CalendarVerifier is a standalone Google Calendar webhook verifier.
+//
+// The multiplexed *Connector dispatches VerifyWebhookMessage/GetRecordsByIds on
+// c.Calendar != nil, so a zero-value &Connector{} (one not initialized for the Calendar
+// module) falls through to ErrNotImplemented and silently drops the webhook. The server's
+// webhook config can point at a *CalendarVerifier instead, which always carries a Calendar
+// adapter and therefore verifies and enriches without depending on that dispatch.
+//
+// It embeds *calendar.Adapter, which already satisfies WebhookVerifierConnector
+// (VerifyWebhookMessage + GetRecordsByIds + the base Connector methods).
+type CalendarVerifier struct {
+	*calendar.Adapter
+}
+
+var _ connectors.WebhookVerifierConnector = (*CalendarVerifier)(nil)
+
+// NewCalendarVerifier builds a standalone Calendar webhook verifier. Unlike NewConnector,
+// it always initializes the Calendar adapter regardless of the configured module, so the
+// returned verifier is never in the nil-dispatch state described on CalendarVerifier.
+func NewCalendarVerifier(params common.ConnectorParams) (*CalendarVerifier, error) {
+	adapter, err := calendar.NewAdapter(params)
+	if err != nil {
+		return nil, err
+	}
+
+	return &CalendarVerifier{Adapter: adapter}, nil
+}
+
 // Re-exports of Gmail history.list types so external callers can use them
 // without importing the internal mail package.
 type (
-	HistoryListParams  = mail.HistoryListParams
-	HistoryListResult  = mail.HistoryListResult
-	HistoryRecord      = mail.HistoryRecord
-	HistoryMessage     = mail.HistoryMessage
+	HistoryListParams    = mail.HistoryListParams
+	HistoryListResult    = mail.HistoryListResult
+	HistoryRecord        = mail.HistoryRecord
+	HistoryMessage       = mail.HistoryMessage
 	HistoryMessageChange = mail.HistoryMessageChange
 )
 

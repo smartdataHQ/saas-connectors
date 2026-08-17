@@ -47,12 +47,15 @@ var objectsReadViaPost = datautils.NewSet( //nolint:gochecknoglobals
 // to the JSON field used for comparison. Slack has no server-side date filter params,
 // so filtering is done in memory after each page is fetched. All Slack timestamps are
 // Unix epoch seconds.
+//
+// Some objects are excluded from connector-side filtering because the filtering would miss
+// records that should be returned for clients:
+//   - users.conversations (field: "created")
 var objectsWithConnectorSideFilter = datautils.Map[string, string]{ //nolint:gochecknoglobals
-	"conversations":       "updated",
-	"files":               "created",
-	"usergroups":          "date_update",
-	"users.conversations": "created",
-	"users":               "updated",
+	"conversations": "updated",
+	"files":         "created",
+	"usergroups":    "date_update",
+	"users":         "updated",
 }
 
 // objectsUsingAddSuffix contains write objects whose Slack API endpoint uses the ".add" method suffix.
@@ -112,4 +115,33 @@ var writeUpdateIdField = datautils.Map[string, string]{
 	"canvases":   "canvas_id",
 	"slackLists": "id",
 	"usergroups": "usergroup",
+}
+
+// readSingleRecordResourceNameToQueryParam maps Slack API resources that read single records
+// to their required query parameter names. The query parameter name varies by object type,
+// and only one identifier can be provided per request.
+//
+// Resources ending with ".info" represent singular record reads.
+var readSingleRecordResourceNameToQueryParam = datautils.Map[string, string]{ // nolint:gochecknoglobals
+	"bots.info":          "bot",     // https://docs.slack.dev/reference/methods/bots.info/
+	"calls.info":         "id",      // https://docs.slack.dev/reference/methods/calls.info/
+	"conversations.info": "channel", // https://docs.slack.dev/reference/methods/conversations.info/
+	"files.info":         "file",    // https://docs.slack.dev/reference/methods/files.info/
+	"users.info":         "user",    // https://docs.slack.dev/reference/methods/users.info/
+}
+
+// readSingleRecordResourceNameToResponseField maps Slack API resources to the response field
+// under which the recorded data is nested. The response field name varies by object type.
+// It is used alongside readSingleRecordResourceNameToQueryParam.
+//
+// Note: The following objects are excluded from single-record reads because they have no
+// matching subscription events that could utilize GetRecordsByIds:
+//   - "reminders.info"
+//   - "team.info"
+var readSingleRecordResourceNameToResponseField = datautils.Map[string, string]{ // nolint:gochecknoglobals
+	"bots.info":          "bot",
+	"calls.info":         "call",
+	"conversations.info": "channel",
+	"files.info":         "file",
+	"users.info":         "user",
 }

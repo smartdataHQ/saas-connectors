@@ -4,14 +4,12 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/amp-labs/connectors"
 	"github.com/amp-labs/connectors/common"
-	"github.com/amp-labs/connectors/internal/goutils"
 	"github.com/amp-labs/connectors/providers"
 	"github.com/amp-labs/connectors/test/utils/mockutils"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockcond"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockserver"
-	"github.com/amp-labs/connectors/test/utils/testroutines"
+	"github.com/amp-labs/connectors/test/utils/testconn"
 	"github.com/amp-labs/connectors/test/utils/testutils"
 )
 
@@ -24,8 +22,9 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 	metadataDealsPipelines := testutils.DataFromFile(t, "metadata-deals-external-pipelines.json")
 	metadataErrSchemaScopes := testutils.DataFromFile(t, "metadata-err-schemas-scope.json")
 	responseLists := testutils.DataFromFile(t, "read-lists-1-first-page.json")
+	responseEventDealClosed := testutils.DataFromFile(t, "read/events/e_deal_closed.json")
 
-	tests := []testroutines.Metadata{
+	tests := []testconn.TestCaseListObjectMetadata{
 		{
 			Name:         "At least one object name must be queried",
 			Input:        nil,
@@ -52,7 +51,7 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 					Then: mockserver.ResponseString(http.StatusOK, `{"requiredProperties": ["mobilephone"]}`),
 				}},
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetMetadata,
+			Comparator: testconn.ComparatorSubsetMetadata,
 			Expected: &common.ListObjectMetadataResult{
 				Result: map[string]common.ObjectMetadata{
 					"contacts": {
@@ -63,18 +62,18 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 								DisplayName:  "Street Address",
 								ValueType:    "string",
 								ProviderType: "string.text",
-								ReadOnly:     goutils.Pointer(false),
-								IsCustom:     goutils.Pointer(false),
-								IsRequired:   goutils.Pointer(false),
+								ReadOnly:     new(false),
+								IsCustom:     new(false),
+								IsRequired:   new(false),
 								Values:       nil,
 							},
 							"mobilephone": {
 								DisplayName:  "Mobile Phone Number",
 								ValueType:    "string",
 								ProviderType: "string.phonenumber",
-								ReadOnly:     goutils.Pointer(false),
-								IsCustom:     goutils.Pointer(false),
-								IsRequired:   goutils.Pointer(true), // required as per mock response.
+								ReadOnly:     new(false),
+								IsCustom:     new(false),
+								IsRequired:   new(true), // required as per mock response.
 								Values:       nil,
 							},
 
@@ -83,47 +82,51 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 								DisplayName:  "Enrichment opt out",
 								ValueType:    "boolean",
 								ProviderType: "bool.booleancheckbox",
-								ReadOnly:     goutils.Pointer(true),
-								IsCustom:     goutils.Pointer(false),
-								IsRequired:   goutils.Pointer(false),
+								ReadOnly:     new(true),
+								IsCustom:     new(false),
+								IsRequired:   new(false),
 								Values:       nil,
 							},
 							"autogen": {
 								DisplayName:  "autogen",
 								ValueType:    "boolean",
 								ProviderType: "enumeration.booleancheckbox",
-								ReadOnly:     goutils.Pointer(false),
-								IsCustom:     goutils.Pointer(true),
-								IsRequired:   goutils.Pointer(false),
+								ReadOnly:     new(false),
+								IsCustom:     new(true),
+								IsRequired:   new(false),
 								Values:       nil,
 							},
 
 							// Float.
+							// associatedcompanyid is a number property carrying
+							// referencedObjectType="COMPANY", so it surfaces as
+							// a reference to companies rather than a raw float.
 							"associatedcompanyid": {
 								DisplayName:  "Primary Associated Company ID",
-								ValueType:    "float",
+								ValueType:    "reference",
 								ProviderType: "number.number",
-								ReadOnly:     goutils.Pointer(false),
-								IsCustom:     goutils.Pointer(false),
-								IsRequired:   goutils.Pointer(false),
+								ReadOnly:     new(false),
+								IsCustom:     new(false),
+								IsRequired:   new(false),
 								Values:       nil,
+								ReferenceTo:  []string{"companies"},
 							},
 							"hubspotscore": {
 								DisplayName:  "HubSpot Score",
 								ValueType:    "float",
 								ProviderType: "number.calculation_score",
-								ReadOnly:     goutils.Pointer(true),
-								IsCustom:     goutils.Pointer(false),
-								IsRequired:   goutils.Pointer(false),
+								ReadOnly:     new(true),
+								IsCustom:     new(false),
+								IsRequired:   new(false),
 								Values:       nil,
 							},
 							"hs_associated_target_accounts": {
 								DisplayName:  "Associated Target Accounts",
 								ValueType:    "float",
 								ProviderType: "number.calculation_rollup",
-								ReadOnly:     goutils.Pointer(true),
-								IsCustom:     goutils.Pointer(false),
-								IsRequired:   goutils.Pointer(false),
+								ReadOnly:     new(true),
+								IsCustom:     new(false),
+								IsRequired:   new(false),
 								Values:       nil,
 							},
 
@@ -132,9 +135,9 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 								DisplayName:  "Status",
 								ValueType:    "singleSelect",
 								ProviderType: "enumeration.select",
-								ReadOnly:     goutils.Pointer(false),
-								IsCustom:     goutils.Pointer(false),
-								IsRequired:   goutils.Pointer(false),
+								ReadOnly:     new(false),
+								IsCustom:     new(false),
+								IsRequired:   new(false),
 								Values: []common.FieldValue{{
 									Value:        "active",
 									DisplayValue: "Active",
@@ -147,9 +150,9 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 								DisplayName:  "Lead Rating",
 								ValueType:    "singleSelect",
 								ProviderType: "enumeration.radio",
-								ReadOnly:     goutils.Pointer(true),
-								IsCustom:     goutils.Pointer(false),
-								IsRequired:   goutils.Pointer(false),
+								ReadOnly:     new(true),
+								IsCustom:     new(false),
+								IsRequired:   new(false),
 								Values: []common.FieldValue{{
 									Value:        "bucket_1",
 									DisplayValue: "1 Star",
@@ -168,9 +171,9 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 								DisplayName:  "Business units",
 								ValueType:    "multiSelect",
 								ProviderType: "enumeration.checkbox",
-								ReadOnly:     goutils.Pointer(false),
-								IsCustom:     goutils.Pointer(false),
-								IsRequired:   goutils.Pointer(false),
+								ReadOnly:     new(false),
+								IsCustom:     new(false),
+								IsRequired:   new(false),
 								Values:       nil,
 							},
 
@@ -179,18 +182,18 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 								DisplayName:  "First subscription create date",
 								ValueType:    "datetime",
 								ProviderType: "datetime.calculation_rollup",
-								ReadOnly:     goutils.Pointer(true),
-								IsCustom:     goutils.Pointer(false),
-								IsRequired:   goutils.Pointer(false),
+								ReadOnly:     new(true),
+								IsCustom:     new(false),
+								IsRequired:   new(false),
 								Values:       nil,
 							},
 							"hs_date_entered_customer": {
 								DisplayName:  "Date entered 'Customer (Lifecycle Stage Pipeline)'",
 								ValueType:    "datetime",
 								ProviderType: "datetime.calculation_read_time",
-								ReadOnly:     goutils.Pointer(true),
-								IsCustom:     goutils.Pointer(false),
-								IsRequired:   goutils.Pointer(false),
+								ReadOnly:     new(true),
+								IsCustom:     new(false),
+								IsRequired:   new(false),
 								Values:       nil,
 							},
 
@@ -199,9 +202,9 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 								DisplayName:  "Last Activity",
 								ValueType:    "other",
 								ProviderType: "object_coordinates.text",
-								ReadOnly:     goutils.Pointer(true),
-								IsCustom:     goutils.Pointer(false),
-								IsRequired:   goutils.Pointer(false),
+								ReadOnly:     new(true),
+								IsCustom:     new(false),
+								IsRequired:   new(false),
 								Values:       nil,
 							},
 						},
@@ -234,7 +237,7 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 					Then: mockserver.Response(http.StatusForbidden, metadataErrSchemaScopes),
 				}},
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetMetadata,
+			Comparator: testconn.ComparatorSubsetMetadata,
 			Expected: &common.ListObjectMetadataResult{
 				Result: map[string]common.ObjectMetadata{
 					"contacts": {
@@ -245,8 +248,8 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 								DisplayName:  "Pipeline",
 								ValueType:    "singleSelect",
 								ProviderType: "enumeration.select",
-								ReadOnly:     goutils.Pointer(false),
-								IsCustom:     goutils.Pointer(false),
+								ReadOnly:     new(false),
+								IsCustom:     new(false),
 								IsRequired:   nil,
 								Values: []common.FieldValue{{
 									Value:        "contacts-lifecycle-pipeline",
@@ -276,7 +279,7 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 					Then: mockserver.ResponseString(http.StatusOK, `{}`),
 				}},
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetMetadata,
+			Comparator: testconn.ComparatorSubsetMetadata,
 			Expected: &common.ListObjectMetadataResult{
 				Result: map[string]common.ObjectMetadata{
 					"deals": {
@@ -287,9 +290,9 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 								DisplayName:  "Pipeline",
 								ValueType:    "singleSelect",
 								ProviderType: "enumeration.select",
-								ReadOnly:     goutils.Pointer(false),
-								IsCustom:     goutils.Pointer(false),
-								IsRequired:   goutils.Pointer(false),
+								ReadOnly:     new(false),
+								IsCustom:     new(false),
+								IsRequired:   new(false),
 								Values: []common.FieldValue{{
 									Value:        "default",
 									DisplayValue: "Sales Pipeline",
@@ -299,9 +302,9 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 								DisplayName:  "Deal Stage",
 								ValueType:    "singleSelect",
 								ProviderType: "enumeration.radio",
-								ReadOnly:     goutils.Pointer(false),
-								IsCustom:     goutils.Pointer(false),
-								IsRequired:   goutils.Pointer(false),
+								ReadOnly:     new(false),
+								IsCustom:     new(false),
+								IsRequired:   new(false),
 								Values: []common.FieldValue{{
 									Value:        "default:appointmentscheduled",
 									DisplayValue: "Appointment Scheduled",
@@ -340,7 +343,7 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 				If:    mockcond.Path("/crm/v3/lists/search"),
 				Then:  mockserver.Response(http.StatusOK, responseLists),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetMetadata,
+			Comparator: testconn.ComparatorSubsetMetadata,
 			Expected: &common.ListObjectMetadataResult{
 				Result: map[string]common.ObjectMetadata{
 					"lists": {
@@ -371,6 +374,322 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 			},
 			ExpectedErrs: nil,
 		},
+		{
+			Name: "Successfully describe various objects",
+			Input: []string{
+				"marketing-campaigns", "marketing-emails", "marketing-forms",
+				"marketing-events", "meeting-links",
+			},
+			Server:     mockserver.Dummy(),
+			Comparator: testconn.ComparatorSubsetMetadata,
+			Expected: &common.ListObjectMetadataResult{
+				Result: map[string]common.ObjectMetadata{
+					"marketing-campaigns": {
+						DisplayName: "Marketing Campaigns",
+						Fields: map[string]common.FieldMetadata{
+							"hs_campaign_status": {
+								DisplayName:  "Campaign Status",
+								ValueType:    "singleSelect",
+								ProviderType: "Enumeration",
+								Values: common.FieldValues{{
+									Value:        "planned",
+									DisplayValue: "planned",
+								}, {
+									Value:        "in_progress",
+									DisplayValue: "in_progress",
+								}, {
+									Value:        "active",
+									DisplayValue: "active",
+								}, {
+									Value:        "paused",
+									DisplayValue: "paused",
+								}, {
+									Value:        "completed",
+									DisplayValue: "completed",
+								}},
+							},
+							"hs_name": {
+								DisplayName:  "Name",
+								ValueType:    "string",
+								ProviderType: "String",
+							},
+							"id": {
+								DisplayName:  "Campaign ID",
+								ValueType:    "string",
+								ProviderType: "String",
+							},
+						},
+					},
+					"marketing-emails": {
+						DisplayName: "Marketing Emails",
+						Fields: map[string]common.FieldMetadata{
+							"campaignName": {
+								DisplayName:  "campaignName",
+								ValueType:    "string",
+								ProviderType: "string",
+							},
+							"subject": {
+								DisplayName:  "subject",
+								ValueType:    "string",
+								ProviderType: "string",
+							},
+						},
+					},
+					"marketing-forms": {
+						DisplayName: "Marketing Forms",
+						Fields: map[string]common.FieldMetadata{
+							"archivedAt": {
+								DisplayName:  "archivedAt",
+								ValueType:    "datetime",
+								ProviderType: "string<date-time>",
+							},
+							"name": {
+								DisplayName:  "name",
+								ValueType:    "string",
+								ProviderType: "string",
+							},
+						},
+					},
+					"marketing-events": {
+						DisplayName: "Marketing Events",
+						Fields: map[string]common.FieldMetadata{
+							"eventName": {
+								DisplayName:  "eventName",
+								ValueType:    "string",
+								ProviderType: "string",
+							},
+						},
+					},
+					"meeting-links": {
+						DisplayName: "Meeting Links",
+						Fields: map[string]common.FieldMetadata{
+							"name": {
+								DisplayName:  "name",
+								ValueType:    "string",
+								ProviderType: "string",
+							},
+						},
+					},
+				},
+				Errors: nil,
+			},
+			ExpectedErrs: nil,
+		},
+		{
+			Name:  "Successfully describe activity event deal closed",
+			Input: []string{"AMPERSAND-event-occurrences-e_deal_closed"},
+			Server: mockserver.Conditional{
+				Setup: mockserver.ContentJSON(),
+				If: mockcond.And{
+					mockcond.MethodGET(),
+					mockcond.Path("/events/event-occurrences/2026-03"),
+					mockcond.QueryParam("eventType", "e_deal_closed"),
+					mockcond.QueryParam("limit", "1"), // sampling
+				},
+				Then: mockserver.Response(http.StatusOK, responseEventDealClosed),
+			}.Server(),
+			Comparator: testconn.ComparatorSubsetMetadata,
+			Expected: &common.ListObjectMetadataResult{
+				Result: map[string]common.ObjectMetadata{
+					"AMPERSAND-event-occurrences-e_deal_closed": {
+						DisplayName: "Deal Closed",
+						Fields: map[string]common.FieldMetadata{
+							// Nested fields from properties.
+							"hs_amount":                         {DisplayName: "hs_amount"},
+							"hs_team":                           {DisplayName: "hs_team"},
+							"hs_closed_state":                   {DisplayName: "hs_closed_state"},
+							"hs_closed_state_reason":            {DisplayName: "hs_closed_state_reason"},
+							"hs_pipeline":                       {DisplayName: "hs_pipeline"},
+							"hs_analytics_latest_source_data_2": {DisplayName: "hs_analytics_latest_source_data_2"},
+							"hs_deal_name":                      {DisplayName: "hs_deal_name"},
+							"hs_analytics_latest_source_data_1": {DisplayName: "hs_analytics_latest_source_data_1"},
+							"hs_analytics_latest_source":        {DisplayName: "hs_analytics_latest_source"},
+							"hs_deal_owner":                     {DisplayName: "hs_deal_owner"},
+							// Root level fields.
+							"properties": {DisplayName: "properties"},
+							"objectType": {DisplayName: "objectType"},
+							"objectId":   {DisplayName: "objectId"},
+							"eventType":  {DisplayName: "eventType"},
+							"occurredAt": {DisplayName: "occurredAt"},
+							"id":         {DisplayName: "id"},
+						},
+					},
+				},
+				Errors: nil,
+			},
+			ExpectedErrs: nil,
+		},
+		{
+			// CON-3293: a property carrying referencedObjectType="OWNER"
+			// (HubSpot's name for users) must surface as a reference to
+			// users rather than a generic singleSelect, even though its
+			// underlying type/fieldType is enumeration/select.
+			Name:  "Property with referencedObjectType=OWNER becomes a reference to users",
+			Input: []string{"contacts"},
+			Server: mockserver.Switch{
+				Setup: mockserver.ContentJSON(),
+				Cases: []mockserver.Case{{
+					If: mockcond.Path("/crm/v3/properties/contacts"),
+					Then: mockserver.ResponseString(http.StatusOK, `{
+						"results": [{
+							"name": "hubspot_owner_id",
+							"label": "Contact owner",
+							"type": "enumeration",
+							"fieldType": "select",
+							"referencedObjectType": "OWNER",
+							"options": [
+								{"label": "Sarah Chen", "value": "12345"},
+								{"label": "Tom Rodriguez", "value": "67890"}
+							],
+							"hubspotDefined": true,
+							"modificationMetadata": {"readOnlyValue": false}
+						}]
+					}`),
+				}, {
+					If:   mockcond.Path("/crm/pipelines/2026-03/contacts"),
+					Then: mockserver.ResponseString(http.StatusOK, "{}"),
+				}, {
+					If:   mockcond.Path("/crm-object-schemas/2026-03/schemas/contacts"),
+					Then: mockserver.ResponseString(http.StatusOK, "{}"),
+				}},
+			}.Server(),
+			Comparator: testconn.ComparatorSubsetMetadata,
+			Expected: &common.ListObjectMetadataResult{
+				Result: map[string]common.ObjectMetadata{
+					"contacts": {
+						DisplayName: "contacts",
+						Fields: map[string]common.FieldMetadata{
+							"hubspot_owner_id": {
+								DisplayName:  "Contact owner",
+								ValueType:    "reference",
+								ProviderType: "enumeration.select",
+								ReadOnly:     new(false),
+								IsCustom:     new(false),
+								IsRequired:   new(false),
+								Values: []common.FieldValue{{
+									Value:        "12345",
+									DisplayValue: "Sarah Chen",
+								}, {
+									Value:        "67890",
+									DisplayValue: "Tom Rodriguez",
+								}},
+								ReferenceTo: []string{"users"},
+							},
+						},
+					},
+				},
+				Errors: nil,
+			},
+			ExpectedErrs: nil,
+		},
+		{
+			// CON-3293: an unrecognized referencedObjectType (e.g. a HubSpot
+			// custom-object FQN like "p12345_my_object") falls through to a
+			// lowercased+pluralized passthrough so downstream consumers still
+			// see a usable reference name (consistent with the plural naming
+			// used by the known mappings) instead of losing the field entirely.
+			Name:  "Property with custom referencedObjectType passes through lowercased+pluralized",
+			Input: []string{"contacts"},
+			Server: mockserver.Switch{
+				Setup: mockserver.ContentJSON(),
+				Cases: []mockserver.Case{{
+					If: mockcond.Path("/crm/v3/properties/contacts"),
+					Then: mockserver.ResponseString(http.StatusOK, `{
+						"results": [{
+							"name": "custom_link_id",
+							"label": "Linked Custom Object",
+							"type": "number",
+							"fieldType": "number",
+							"referencedObjectType": "P12345_CUSTOM_OBJECT",
+							"options": [],
+							"hubspotDefined": false,
+							"modificationMetadata": {"readOnlyValue": false}
+						}]
+					}`),
+				}, {
+					If:   mockcond.Path("/crm/pipelines/2026-03/contacts"),
+					Then: mockserver.ResponseString(http.StatusOK, "{}"),
+				}, {
+					If:   mockcond.Path("/crm-object-schemas/2026-03/schemas/contacts"),
+					Then: mockserver.ResponseString(http.StatusOK, "{}"),
+				}},
+			}.Server(),
+			Comparator: testconn.ComparatorSubsetMetadata,
+			Expected: &common.ListObjectMetadataResult{
+				Result: map[string]common.ObjectMetadata{
+					"contacts": {
+						DisplayName: "contacts",
+						Fields: map[string]common.FieldMetadata{
+							"custom_link_id": {
+								DisplayName:  "Linked Custom Object",
+								ValueType:    "reference",
+								ProviderType: "number.number",
+								ReadOnly:     new(false),
+								IsCustom:     new(true),
+								IsRequired:   new(false),
+								Values:       nil,
+								ReferenceTo:  []string{"p12345_custom_objects"},
+							},
+						},
+					},
+				},
+				Errors: nil,
+			},
+			ExpectedErrs: nil,
+		},
+		{
+			// Follow-up to CON-3293: USER is mapped explicitly so the
+			// lowercase fallback doesn't yield "user" (singular) instead of
+			// our "users" object name.
+			Name:  "Property with referencedObjectType=USER becomes a reference to users",
+			Input: []string{"contacts"},
+			Server: mockserver.Switch{
+				Setup: mockserver.ContentJSON(),
+				Cases: []mockserver.Case{{
+					If: mockcond.Path("/crm/v3/properties/contacts"),
+					Then: mockserver.ResponseString(http.StatusOK, `{
+						"results": [{
+							"name": "hs_created_by_user_id",
+							"label": "Created by user ID",
+							"type": "number",
+							"fieldType": "number",
+							"referencedObjectType": "USER",
+							"options": [],
+							"hubspotDefined": true,
+							"modificationMetadata": {"readOnlyValue": true}
+						}]
+					}`),
+				}, {
+					If:   mockcond.Path("/crm/pipelines/2026-03/contacts"),
+					Then: mockserver.ResponseString(http.StatusOK, "{}"),
+				}, {
+					If:   mockcond.Path("/crm-object-schemas/2026-03/schemas/contacts"),
+					Then: mockserver.ResponseString(http.StatusOK, "{}"),
+				}},
+			}.Server(),
+			Comparator: testconn.ComparatorSubsetMetadata,
+			Expected: &common.ListObjectMetadataResult{
+				Result: map[string]common.ObjectMetadata{
+					"contacts": {
+						DisplayName: "contacts",
+						Fields: map[string]common.FieldMetadata{
+							"hs_created_by_user_id": {
+								DisplayName:  "Created by user ID",
+								ValueType:    "reference",
+								ProviderType: "number.number",
+								ReadOnly:     new(true),
+								IsCustom:     new(false),
+								IsRequired:   new(false),
+								Values:       nil,
+								ReferenceTo:  []string{"users"},
+							},
+						},
+					},
+				},
+				Errors: nil,
+			},
+			ExpectedErrs: nil,
+		},
 	}
 
 	for _, tt := range tests {
@@ -378,7 +697,7 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 		t.Run(tt.Name, func(t *testing.T) {
 			t.Parallel()
 
-			tt.Run(t, func() (connectors.ObjectMetadataConnector, error) {
+			tt.Run(t, func() (testconn.TestableMetadataReader, error) {
 				return constructTestConnector(tt.Server.URL)
 			})
 		})
@@ -387,17 +706,17 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 
 func constructTestConnector(serverURL string) (*Connector, error) {
 	connector, err := NewConnector(
-		WithAuthenticatedClient(mockutils.NewClient()),
-		WithModule(providers.ModuleHubspotCRM),
+		common.ConnectorParams{
+			Module:              providers.ModuleHubspotCRM,
+			AuthenticatedClient: mockutils.NewClient(),
+		},
 	)
 	if err != nil {
 		return nil, err
 	}
 
 	// for testing we want to redirect calls to our mock server
-	connector.providerInfo.BaseURL = mockutils.ReplaceURLOrigin(connector.providerInfo.BaseURL, serverURL)
-	connector.moduleInfo.BaseURL = mockutils.ReplaceURLOrigin(connector.moduleInfo.BaseURL, serverURL)
-	connector.crmAdapter.SetUnitTestBaseURL(mockutils.ReplaceURLOrigin(connector.moduleInfo.BaseURL, serverURL))
+	connector.SetUnitTestMockServerBaseURL(serverURL)
 
 	return connector, nil
 }
@@ -459,7 +778,7 @@ func TestUpsertMetadataCRM(t *testing.T) { // nolint:funlen,gocognit,cyclop
 	payloadUpdateInterests := testutils.DataFromFile(t, "custom/update/6-payload-update-property-interests.json")
 	responseUpdateInterests := testutils.DataFromFile(t, "custom/update/7-response-update-property-interests.json")
 
-	tests := []testroutines.UpsertMetadata{
+	tests := []testconn.TestCaseUpsertMetadata{
 		{
 			Name:         "At least one object name must be queried",
 			Input:        nil,
@@ -518,7 +837,7 @@ func TestUpsertMetadataCRM(t *testing.T) { // nolint:funlen,gocognit,cyclop
 					Then: mockserver.Response(http.StatusCreated, responseBatchCreateProperties1),
 				}},
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetUpsertMetadata,
+			Comparator: testconn.ComparatorSubsetUpsertMetadata,
 			Expected: &common.UpsertMetadataResult{
 				Success: true,
 				Fields: map[string]map[string]common.FieldUpsertResult{
@@ -656,7 +975,7 @@ func TestUpsertMetadataCRM(t *testing.T) { // nolint:funlen,gocognit,cyclop
 					Then: mockserver.Response(http.StatusOK, responseUpdateInterests),
 				}},
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetUpsertMetadata,
+			Comparator: testconn.ComparatorSubsetUpsertMetadata,
 			Expected: &common.UpsertMetadataResult{
 				Success: true,
 				Fields: map[string]map[string]common.FieldUpsertResult{
@@ -713,7 +1032,7 @@ func TestUpsertMetadataCRM(t *testing.T) { // nolint:funlen,gocognit,cyclop
 
 			ctx := common.WithAuthToken(t.Context(), "TEST_ACCESS_TOKEN")
 
-			tt.RunWithContext(t, ctx, func() (connectors.UpsertMetadataConnector, error) {
+			tt.RunWithContext(t, ctx, func() (testconn.TestableMetadataUpdater, error) {
 				return constructTestConnector(tt.Server.URL)
 			})
 		})

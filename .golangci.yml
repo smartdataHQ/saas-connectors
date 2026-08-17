@@ -29,6 +29,8 @@ linters:
     - tagliatelle
     # We're not doing black-box testing, so enabling this would be counterproductive. We might want to discuss this though, it's a good practice.
     - testpackage
+    # Linter crashes when Generics are used.
+    - unparam
     # Annoying and not useful. Disabling otherwise we have to have comment everywhere
     - wrapcheck
     # Deprecated (since v2.2.0) due to: new major version. Replaced by wsl_v5.
@@ -40,8 +42,10 @@ linters:
         # Use var-naming, but add a special rule to accept "Id" rather than forcing "ID"
         - name: var-naming
           arguments:
-            - - ID
-              - API
+            - [ Id, Api ] # AllowList
+            - [ ] # DenyList
+            # TODO set it to false/remove it. All cases must be in AllowList/DenyList. Apparently duplicates (ignoring case) in one category are not allowed.
+            - - skip-initialism-name-checks: true
           disabled: false
     # https://golangci-lint.run/docs/linters/configuration/#staticcheck
     staticcheck:
@@ -50,6 +54,7 @@ linters:
         - -ST1003 # Poorly chosen identifier.
         - -QF1002 # Convert untagged switch to tagged switch.
         - -QF1008 # Omit embedded fields from selector expression.
+        - -SA1019 # Using a deprecated function, variable, constant or field.
     # https://golangci-lint.run/docs/linters/configuration/#gosec
     gosec:
       excludes:
@@ -98,6 +103,12 @@ linters:
       - linters:
           - revive
         text: "avoid meaningless package names"
+      # The subscribe package is a declarative per-provider config registry: its package-level
+      # ProviderConfig literals and the providerConfigs map ARE the API surface, mirroring the
+      # server package it was migrated from (ENG-4090).
+      - linters:
+          - gochecknoglobals
+        path: ^subscribe/
     paths:
       - playground
       - test

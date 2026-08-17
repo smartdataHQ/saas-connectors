@@ -10,7 +10,7 @@ import (
 	"github.com/amp-labs/connectors/common"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockcond"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockserver"
-	"github.com/amp-labs/connectors/test/utils/testroutines"
+	"github.com/amp-labs/connectors/test/utils/testconn"
 	"github.com/amp-labs/connectors/test/utils/testutils"
 )
 
@@ -25,8 +25,9 @@ func TestRead(t *testing.T) {
 	responseInvoices := testutils.DataFromFile(t, "invoice.json")
 	responseEmployees := testutils.DataFromFile(t, "read-employees.json")
 	responseRoutes := testutils.DataFromFile(t, "read-routes.json")
+	responseJobs := testutils.DataFromFile(t, "read-jobs.json")
 
-	tests := []testroutines.Read{
+	tests := []testconn.TestCaseRead{
 		{
 			Name: "Read customers empty",
 			Input: common.ReadParams{
@@ -68,7 +69,7 @@ func TestRead(t *testing.T) {
 				},
 				Then: mockserver.Response(http.StatusOK, responseCustomersFirst),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetRead,
+			Comparator: testconn.ComparatorSubsetRead,
 			Expected: &common.ReadResult{
 				Rows: 1,
 				Data: []common.ReadResultRow{
@@ -87,7 +88,7 @@ func TestRead(t *testing.T) {
 						},
 					},
 				},
-				NextPage: testroutines.URLTestServer + "/customers?page=2&page_size=1&sort_by=updated_at&sort_direction=desc",
+				NextPage: testconn.URLTestServer + "/customers?page=2&page_size=1&sort_by=updated_at&sort_direction=desc",
 				Done:     false,
 			},
 			ExpectedErrs: nil,
@@ -97,7 +98,7 @@ func TestRead(t *testing.T) {
 			Input: common.ReadParams{
 				ObjectName: "customers",
 				Fields:     connectors.Fields("id", "first_name", "email", "updated_at"),
-				NextPage:   testroutines.URLTestServer + "/customers?page=2&page_size=1&sort_by=updated_at&sort_direction=desc",
+				NextPage:   testconn.URLTestServer + "/customers?page=2&page_size=1&sort_by=updated_at&sort_direction=desc",
 			},
 			Server: mockserver.Conditional{
 				Setup: mockserver.ContentJSON(),
@@ -108,7 +109,7 @@ func TestRead(t *testing.T) {
 				},
 				Then: mockserver.Response(http.StatusOK, responseCustomersLast),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetRead,
+			Comparator: testconn.ComparatorSubsetRead,
 			Expected: &common.ReadResult{
 				Rows: 1,
 				Data: []common.ReadResultRow{
@@ -149,7 +150,7 @@ func TestRead(t *testing.T) {
 				},
 				Then: mockserver.Response(http.StatusOK, responseCustomersFirst),
 			}.Server(),
-			Comparator: testroutines.ComparatorPagination,
+			Comparator: testconn.ComparatorPagination,
 			Expected: &common.ReadResult{
 				Rows: 0,
 				Data: []common.ReadResultRow{},
@@ -173,11 +174,11 @@ func TestRead(t *testing.T) {
 				},
 				Then: mockserver.Response(http.StatusOK, responseCustomersFirst),
 			}.Server(),
-			Comparator: testroutines.ComparatorPagination,
+			Comparator: testconn.ComparatorPagination,
 			Expected: &common.ReadResult{
 				Rows:     0,
 				Data:     []common.ReadResultRow{},
-				NextPage: testroutines.URLTestServer + "/customers?page=2&page_size=1&sort_by=updated_at&sort_direction=desc",
+				NextPage: testconn.URLTestServer + "/customers?page=2&page_size=1&sort_by=updated_at&sort_direction=desc",
 				Done:     false,
 			},
 			ExpectedErrs: nil,
@@ -198,7 +199,7 @@ func TestRead(t *testing.T) {
 				},
 				Then: mockserver.Response(http.StatusOK, responseEmployees),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetRead,
+			Comparator: testconn.ComparatorSubsetRead,
 			Expected: &common.ReadResult{
 				Rows: 1,
 				Data: []common.ReadResultRow{
@@ -238,7 +239,7 @@ func TestRead(t *testing.T) {
 				},
 				Then: mockserver.Response(http.StatusOK, responseRoutes),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetRead,
+			Comparator: testconn.ComparatorSubsetRead,
 			Expected: &common.ReadResult{
 				Rows: 1,
 				Data: []common.ReadResultRow{
@@ -273,7 +274,7 @@ func TestRead(t *testing.T) {
 				},
 				Then: mockserver.Response(http.StatusOK, responseMaterialCategoryFirst),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetRead,
+			Comparator: testconn.ComparatorSubsetRead,
 			Expected: &common.ReadResult{
 				Rows: 2,
 				Data: []common.ReadResultRow{
@@ -302,7 +303,7 @@ func TestRead(t *testing.T) {
 						},
 					},
 				},
-				NextPage: testroutines.URLTestServer + "/api/price_book/material_categories?page=2&page_size=1&sort_by=updated_at&sort_direction=desc",
+				NextPage: testconn.URLTestServer + "/api/price_book/material_categories?page=2&page_size=1&sort_by=updated_at&sort_direction=desc",
 				Done:     false,
 			},
 			ExpectedErrs: nil,
@@ -313,7 +314,7 @@ func TestRead(t *testing.T) {
 			Input: common.ReadParams{
 				ObjectName: "price_book/material_categories",
 				Fields:     connectors.Fields("uuid", "name", "updated_at"),
-				NextPage:   testroutines.URLTestServer + "/api/price_book/material_categories?page=2&page_size=1&sort_by=updated_at&sort_direction=desc",
+				NextPage:   testconn.URLTestServer + "/api/price_book/material_categories?page=2&page_size=1&sort_by=updated_at&sort_direction=desc",
 			},
 			Server: mockserver.Conditional{
 				Setup: mockserver.ContentJSON(),
@@ -324,7 +325,7 @@ func TestRead(t *testing.T) {
 				},
 				Then: mockserver.Response(http.StatusOK, responseMaterialCategoryLast),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetRead,
+			Comparator: testconn.ComparatorSubsetRead,
 			Expected: &common.ReadResult{
 				Rows: 2,
 				Data: []common.ReadResultRow{
@@ -359,6 +360,97 @@ func TestRead(t *testing.T) {
 			ExpectedErrs: nil,
 		},
 		{
+			Name: "Read jobs without customer association request",
+			Input: common.ReadParams{
+				ObjectName: "jobs",
+				Fields:     connectors.Fields("id", "work_status", "updated_at"),
+				PageSize:   1,
+			},
+			Server: mockserver.Conditional{
+				Setup: mockserver.ContentJSON(),
+				If: mockcond.And{
+					mockcond.Path("/jobs"),
+					mockcond.QueryParam("page_size", "1"),
+					mockcond.QueryParam("sort_by", "updated_at"),
+					mockcond.QueryParam("sort_direction", "desc"),
+				},
+				Then: mockserver.Response(http.StatusOK, responseJobs),
+			}.Server(),
+			Comparator: testconn.ComparatorSubsetRead,
+			Expected: &common.ReadResult{
+				Rows: 1,
+				Data: []common.ReadResultRow{
+					{
+						Fields: map[string]any{
+							"id":          "job_00000000000000000000000000000001",
+							"work_status": "scheduled",
+							"updated_at":  "2026-01-02T00:00:00Z",
+						},
+						Raw: map[string]any{
+							"id":          "job_00000000000000000000000000000001",
+							"work_status": "scheduled",
+						},
+					},
+				},
+				NextPage: "",
+				Done:     true,
+			},
+			ExpectedErrs: nil,
+		},
+		{
+			Name: "Read jobs attaches embedded customer as association",
+			Input: common.ReadParams{
+				ObjectName:        "jobs",
+				Fields:            connectors.Fields("id", "work_status", "updated_at"),
+				PageSize:          1,
+				AssociatedObjects: []string{"customers"},
+			},
+			Server: mockserver.Conditional{
+				Setup: mockserver.ContentJSON(),
+				If: mockcond.And{
+					mockcond.Path("/jobs"),
+					mockcond.QueryParam("page_size", "1"),
+					mockcond.QueryParam("sort_by", "updated_at"),
+					mockcond.QueryParam("sort_direction", "desc"),
+				},
+				Then: mockserver.Response(http.StatusOK, responseJobs),
+			}.Server(),
+			Comparator: testconn.ComparatorSubsetRead,
+			Expected: &common.ReadResult{
+				Rows: 1,
+				Data: []common.ReadResultRow{
+					{
+						Fields: map[string]any{
+							"id":          "job_00000000000000000000000000000001",
+							"work_status": "scheduled",
+							"updated_at":  "2026-01-02T00:00:00Z",
+						},
+						Raw: map[string]any{
+							"id":          "job_00000000000000000000000000000001",
+							"work_status": "scheduled",
+						},
+						Associations: map[string][]common.Association{
+							"customers": {
+								{
+									ObjectId: "cus_00000000000000000000000000000001",
+									Raw: map[string]any{
+										"id":         "cus_00000000000000000000000000000001",
+										"first_name": "Jane",
+										"last_name":  "Sample",
+										"email":      "jane.sample@example.com",
+									},
+								},
+							},
+						},
+					},
+				},
+				NextPage: "",
+				Done:     true,
+			},
+			ExpectedErrs: nil,
+		},
+
+		{
 			Name: "Read invoices",
 			Input: common.ReadParams{
 				ObjectName: "invoices",
@@ -373,7 +465,7 @@ func TestRead(t *testing.T) {
 				},
 				Then: mockserver.Response(http.StatusOK, responseInvoices),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetRead,
+			Comparator: testconn.ComparatorSubsetRead,
 			Expected: &common.ReadResult{
 				Rows: 2,
 				Data: []common.ReadResultRow{
@@ -417,7 +509,7 @@ func TestRead(t *testing.T) {
 		t.Run(tt.Name, func(t *testing.T) {
 			t.Parallel()
 
-			tt.Run(t, func() (connectors.ReadConnector, error) {
+			tt.Run(t, func() (testconn.TestableReader, error) {
 				return constructTestConnector(tt.Server.URL)
 			})
 		})

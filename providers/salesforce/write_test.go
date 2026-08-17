@@ -4,11 +4,10 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/amp-labs/connectors"
 	"github.com/amp-labs/connectors/common"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockcond"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockserver"
-	"github.com/amp-labs/connectors/test/utils/testroutines"
+	"github.com/amp-labs/connectors/test/utils/testconn"
 	"github.com/amp-labs/connectors/test/utils/testutils"
 )
 
@@ -20,7 +19,7 @@ func TestWrite(t *testing.T) { // nolint:funlen,cyclop
 	responseCreateOK := testutils.DataFromFile(t, "create-ok.json")
 	responseOKWithErrors := testutils.DataFromFile(t, "success-with-errors.json")
 
-	tests := []testroutines.Write{
+	tests := []testconn.TestCaseWrite{
 		{
 			Name:         "Write object must be included",
 			Server:       mockserver.Dummy(),
@@ -41,7 +40,7 @@ func TestWrite(t *testing.T) { // nolint:funlen,cyclop
 			}.Server(),
 			ExpectedErrs: []error{
 				common.ErrBadRequest,
-				testutils.StringError("No such column 'AccountNumer' on sobject of type Account"),
+				testutils.StringError("Field 'AccountNumer' was not found or is not accessible on object 'Account'."),
 			},
 		},
 		{
@@ -118,7 +117,7 @@ func TestWrite(t *testing.T) { // nolint:funlen,cyclop
 		t.Run(tt.Name, func(t *testing.T) {
 			t.Parallel()
 
-			tt.Run(t, func() (connectors.WriteConnector, error) {
+			tt.Run(t, func() (testconn.TestableWriter, error) {
 				return constructTestConnector(tt.Server.URL)
 			})
 		})
@@ -134,7 +133,7 @@ func TestWritePardot(t *testing.T) { // nolint:funlen,cyclop
 		"Pardot-Business-Unit-Id": []string{"test-business-unit-id"},
 	}
 
-	tests := []testroutines.Write{
+	tests := []testconn.TestCaseWrite{
 		{
 			Name:         "Write object must be included",
 			Server:       mockserver.Dummy(),
@@ -203,7 +202,7 @@ func TestWritePardot(t *testing.T) { // nolint:funlen,cyclop
 		t.Run(tt.Name, func(t *testing.T) {
 			t.Parallel()
 
-			tt.Run(t, func() (connectors.WriteConnector, error) {
+			tt.Run(t, func() (testconn.TestableWriter, error) {
 				return constructTestConnectorAccountEngagement(tt.Server.URL)
 			})
 		})

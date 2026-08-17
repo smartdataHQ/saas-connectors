@@ -11,10 +11,24 @@ import (
 	"github.com/amp-labs/connectors/internal/components/schema"
 	"github.com/amp-labs/connectors/internal/components/writer"
 	"github.com/amp-labs/connectors/providers"
+	"github.com/amp-labs/connectors/providers/microsoft/internal/batch"
 	"github.com/amp-labs/connectors/providers/microsoft/internal/metadata"
+	"github.com/amp-labs/connectors/providers/microsoft/internal/subscriber"
+	"github.com/amp-labs/connectors/providers/microsoft/internal/webhook"
 )
 
 const apiVersion = "v1.0"
+
+// Type Exports.
+type (
+	SubscriptionEvent          = webhook.Event
+	CollapsedSubscriptionEvent = webhook.CollapsedSubscriptionEvent
+	SubscriptionRequest        = subscriber.Request
+	SubscriptionResponse       = subscriber.Result
+	SubscriptionResource       = subscriber.SubscriptionResource
+)
+
+type subscribeStrategy = subscriber.Strategy
 
 type Connector struct {
 	// Basic connector
@@ -28,22 +42,45 @@ type Connector struct {
 	components.Reader
 	components.Writer
 	components.Deleter
+	*webhook.NoopVerifier
+	*subscribeStrategy
+
+	// Dependent services.
+	batchStrategy *batch.Strategy
 }
 
+// NewConnector creates a new Microsoft connector. It defaults to the Microsoft
+// provider; use NewConnectorForProvider for twin providers (e.g.
+// MicrosoftAdminConsent) that share the same implementation but differ
+// in auth scheme.
 func NewConnector(params common.ConnectorParams) (*Connector, error) {
-	return components.Initialize(providers.Microsoft, params, constructor)
+	return NewConnectorForProvider(providers.Microsoft, params)
+}
+
+// NewConnectorForProvider creates a new Microsoft connector under the given
+// provider name. This allows twin providers like MicrosoftAdminConsent
+// to reuse the same connector implementation with a different auth
+// configuration.
+func NewConnectorForProvider(provider providers.Provider, params common.ConnectorParams) (*Connector, error) {
+	return components.Initialize(provider, params, constructor)
 }
 
 // nolint:funlen
 func constructor(base *components.Connector) (*Connector, error) {
 	connector := &Connector{
-		Connector: base,
+		Connector:     base,
+		batchStrategy: batch.NewStrategy(base.JSONHTTPClient(), base.ProviderInfo()),
 	}
 
 	connector.SchemaProvider = schema.NewOpenAPISchemaProvider(connector.ProviderContext.Module(), metadata.Schemas)
 
+	// DirectFaultyResponder (vs. the default FaultyResponder) gives the
+	// callback access to the raw *http.Response, including headers.
+	// handleErrorResponse needs WWW-Authenticate to detect CAE / step-up
+	// claim challenges on 401s; see providers/microsoft/errors.go for the
+	// classification logic and known limitations.
 	errorHandler := interpreter.ErrorHandler{
-		JSON: interpreter.NewFaultyResponder(errorFormats, nil),
+		JSON: interpreter.DirectFaultyResponder{Callback: handleErrorResponse},
 	}.Handle
 
 	connector.Reader = reader.NewHTTPReader(
@@ -78,6 +115,11 @@ func constructor(base *components.Connector) (*Connector, error) {
 			ErrorHandler:  errorHandler,
 		},
 	)
+
+	connector.NoopVerifier = webhook.NewVerifier(connector.JSONHTTPClient(), connector.ProviderInfo())
+	connector.batchStrategy = batch.NewStrategy(base.JSONHTTPClient(), base.ProviderInfo())
+	connector.subscribeStrategy = subscriber.NewStrategy(
+		base.JSONHTTPClient(), base.ProviderInfo(), connector.batchStrategy)
 
 	return connector, nil
 }

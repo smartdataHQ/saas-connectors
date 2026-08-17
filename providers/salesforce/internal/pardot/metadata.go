@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/amp-labs/connectors/common"
-	"github.com/amp-labs/connectors/internal/goutils"
 	"github.com/amp-labs/connectors/internal/staticschema"
 	"github.com/amp-labs/connectors/providers"
 	"github.com/amp-labs/connectors/tools/scrapper"
@@ -74,7 +73,7 @@ func (a *Adapter) fetchProspectsCustomFields(
 
 	url.WithQueryParam("fields", "id,name,fieldId,type,isRequired")
 
-	endpoint := goutils.Pointer(url.String())
+	endpoint := new(url.String())
 
 	for endpoint != nil {
 		resp, err := a.JSONHTTPClient().Get(ctx, *endpoint, common.Header{
@@ -91,12 +90,19 @@ func (a *Adapter) fetchProspectsCustomFields(
 		}
 
 		for _, field := range response.Values {
+			if field.IsArrayField() {
+				// Array fields should not be advertised by ListObjectMetadata.
+				// Underlying endpoint used by Read(Prospects) fails when such fields are used.
+				// Individual, per-record request would work, but would be deemed costly.
+				continue
+			}
+
 			metadata.AddFieldMetadata(field.FieldName(), common.FieldMetadata{
 				DisplayName:  field.DisplayName,
 				ValueType:    field.ValueType(),
 				ProviderType: field.Type,
-				ReadOnly:     goutils.Pointer(false), // can write, modify data
-				IsCustom:     goutils.Pointer(true),
+				ReadOnly:     new(false), // can write, modify data
+				IsCustom:     new(true),
 				IsRequired:   field.IsRequired,
 				Values:       nil, // API does not return anything even for radio buttons or dropdowns.
 				ReferenceTo:  nil, // not applicable
@@ -131,10 +137,36 @@ func (v prospectCustomFieldsResponseValue) FieldName() string {
 	return v.FieldID + "__c"
 }
 
+// ValueType returns a mapping of a field type to Ampersand defined field types.
+// https://developer.salesforce.com/docs/marketing/pardot/guide/custom-field-v5.html#required-editable-fields
 func (v prospectCustomFieldsResponseValue) ValueType() common.ValueType {
-	if v.Type == "text" {
+	switch strings.ToLower(v.Type) {
+	case "text", "textarea", "radio button", "dropdown", "hidden", "crm user":
 		return common.ValueTypeString
+	case "multi-select", "checkbox":
+		return common.ValueTypeMultiSelect
+	case "number":
+		return common.ValueTypeFloat
+	case "date":
+		// Salesforce performs validation on a string. It must be properly formatted date.
+		return common.ValueTypeDate
+	default:
+		return common.ValueTypeOther
 	}
+}
 
-	return common.ValueTypeOther
+// IsArrayField reports if the custom field of a prospect holds an array.
+// Alternatively it can be a string, a float.
+//
+// Array custom fields are not supported by Prospect Query endpoint.
+// https://developer.salesforce.com/docs/marketing/pardot/guide/prospect-v5.html#requesting-custom-fields
+func (v prospectCustomFieldsResponseValue) IsArrayField() bool {
+	switch strings.ToLower(v.Type) {
+	case "multi-select":
+		return true
+	case "checkbox":
+		return true
+	default:
+		return false
+	}
 }

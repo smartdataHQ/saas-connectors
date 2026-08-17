@@ -9,7 +9,7 @@ import (
 	"github.com/amp-labs/connectors/common"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockcond"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockserver"
-	"github.com/amp-labs/connectors/test/utils/testroutines"
+	"github.com/amp-labs/connectors/test/utils/testconn"
 	"github.com/amp-labs/connectors/test/utils/testutils"
 )
 
@@ -25,7 +25,7 @@ func TestRead(t *testing.T) {
 		"not_4f7kQhLpMNBvxy": testutils.DataFromFile(t, "note_not_4f7kQhLpMNBvxy.json"),
 		"not_9b2xRwNsTLCfop": testutils.DataFromFile(t, "note_not_9b2xRwNsTLCfop.json"),
 	}
-	tests := []testroutines.Read{
+	tests := []testconn.TestCaseRead{
 		{
 			Name: "Read empty items",
 			Input: common.ReadParams{
@@ -64,7 +64,7 @@ func TestRead(t *testing.T) {
 				},
 				Then: mockserver.Response(http.StatusOK, responseNotes),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetRead,
+			Comparator: testconn.ComparatorSubsetRead,
 			Expected: &common.ReadResult{
 				Rows: 3,
 				Data: []common.ReadResultRow{
@@ -136,20 +136,30 @@ func TestRead(t *testing.T) {
 						Then: mockserver.Response(http.StatusOK, responseNotes),
 					},
 					{
-						If:   mockcond.Path("/v1/notes/not_1d3tmYTlCICgjy"),
+						If: mockcond.And{
+							mockcond.Path("/v1/notes/not_1d3tmYTlCICgjy"),
+							mockcond.QueryParam("include", "transcript"),
+						},
 						Then: mockserver.Response(http.StatusOK, noteFull["not_1d3tmYTlCICgjy"]),
 					},
 					{
-						If:   mockcond.Path("/v1/notes/not_4f7kQhLpMNBvxy"),
+
+						If: mockcond.And{
+							mockcond.Path("/v1/notes/not_4f7kQhLpMNBvxy"),
+							mockcond.QueryParam("include", "transcript"),
+						},
 						Then: mockserver.Response(http.StatusOK, noteFull["not_4f7kQhLpMNBvxy"]),
 					},
 					{
-						If:   mockcond.Path("/v1/notes/not_9b2xRwNsTLCfop"),
+						If: mockcond.And{
+							mockcond.Path("/v1/notes/not_9b2xRwNsTLCfop"),
+							mockcond.QueryParam("include", "transcript"),
+						},
 						Then: mockserver.Response(http.StatusOK, noteFull["not_9b2xRwNsTLCfop"]),
 					},
 				},
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetRead,
+			Comparator: testconn.ComparatorSubsetRead,
 			Expected: &common.ReadResult{
 				Rows: 3,
 				Data: []common.ReadResultRow{
@@ -233,7 +243,7 @@ func TestRead(t *testing.T) {
 					},
 				},
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetRead,
+			Comparator: testconn.ComparatorSubsetRead,
 			Expected: &common.ReadResult{
 				Rows: 3,
 				Data: []common.ReadResultRow{
@@ -266,7 +276,7 @@ func TestRead(t *testing.T) {
 					},
 				},
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetRead,
+			Comparator: testconn.ComparatorSubsetRead,
 			Expected: &common.ReadResult{
 				Rows: 1,
 				Data: []common.ReadResultRow{
@@ -301,7 +311,7 @@ func TestRead(t *testing.T) {
 				},
 				Then: mockserver.Response(http.StatusOK, responseNotes),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetRead,
+			Comparator: testconn.ComparatorSubsetRead,
 			Expected: &common.ReadResult{
 				Rows: 3,
 				Data: []common.ReadResultRow{
@@ -338,7 +348,7 @@ func TestRead(t *testing.T) {
 					},
 				},
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetRead,
+			Comparator: testconn.ComparatorSubsetRead,
 			Expected: &common.ReadResult{
 				Rows: 3,
 				Data: []common.ReadResultRow{
@@ -392,7 +402,7 @@ func TestRead(t *testing.T) {
 					},
 				},
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetRead,
+			Comparator: testconn.ComparatorSubsetRead,
 			Expected: &common.ReadResult{
 				Rows: 3,
 				Data: []common.ReadResultRow{
@@ -468,7 +478,7 @@ func TestRead(t *testing.T) {
 		t.Run(tt.Name, func(t *testing.T) {
 			t.Parallel()
 
-			tt.Run(t, func() (connectors.ReadConnector, error) {
+			tt.Run(t, func() (testconn.TestableReader, error) {
 				return constructTestConnector(tt.Server.URL)
 			})
 		})

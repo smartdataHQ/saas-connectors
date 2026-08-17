@@ -2,14 +2,13 @@ package slack
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
-	"github.com/amp-labs/connectors"
 	"github.com/amp-labs/connectors/common"
-	"github.com/amp-labs/connectors/test/utils/mockutils"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockcond"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockserver"
-	"github.com/amp-labs/connectors/test/utils/testroutines"
+	"github.com/amp-labs/connectors/test/utils/testconn"
 	"github.com/amp-labs/connectors/test/utils/testutils"
 )
 
@@ -19,7 +18,7 @@ func TestListObjectMetadata(t *testing.T) { //nolint:funlen,gocognit,cyclop,main
 	conversationsResponse := testutils.DataFromFile(t, "conversations-list.json")
 	usersResponse := testutils.DataFromFile(t, "users-list.json")
 
-	tests := []testroutines.Metadata{
+	tests := []testconn.TestCaseListObjectMetadata{
 		{
 			Name:         "At least one object name must be queried",
 			Input:        nil,
@@ -37,7 +36,7 @@ func TestListObjectMetadata(t *testing.T) { //nolint:funlen,gocognit,cyclop,main
 				},
 				Then: mockserver.Response(http.StatusOK, conversationsResponse),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetMetadata,
+			Comparator: testconn.ComparatorSubsetMetadata,
 			Expected: &common.ListObjectMetadataResult{
 				Result: map[string]common.ObjectMetadata{
 					"conversations": {
@@ -69,7 +68,7 @@ func TestListObjectMetadata(t *testing.T) { //nolint:funlen,gocognit,cyclop,main
 				},
 				Then: mockserver.Response(http.StatusOK, usersResponse),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetMetadata,
+			Comparator: testconn.ComparatorSubsetMetadata,
 			Expected: &common.ListObjectMetadataResult{
 				Result: map[string]common.ObjectMetadata{
 					"users": {
@@ -107,7 +106,7 @@ func TestListObjectMetadata(t *testing.T) { //nolint:funlen,gocognit,cyclop,main
 					},
 				},
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetMetadata,
+			Comparator: testconn.ComparatorSubsetMetadata,
 			Expected: &common.ListObjectMetadataResult{
 				Result: map[string]common.ObjectMetadata{
 					"conversations": {
@@ -135,23 +134,23 @@ func TestListObjectMetadata(t *testing.T) { //nolint:funlen,gocognit,cyclop,main
 		t.Run(tt.Name, func(t *testing.T) {
 			t.Parallel()
 
-			tt.Run(t, func() (connectors.ObjectMetadataConnector, error) {
-				return constructTestConnector(tt.Server.URL)
+			tt.Run(t, func() (testconn.TestableMetadataReader, error) {
+				return constructTestConnector(tt.Server)
 			})
 		})
 	}
 }
 
-func constructTestConnector(serverURL string) (*Connector, error) {
+func constructTestConnector(server *httptest.Server) (*Connector, error) {
 	connector, err := NewConnector(common.ConnectorParams{
-		AuthenticatedClient: mockutils.NewClient(),
+		AuthenticatedClient: server.Client(),
 	})
 	if err != nil {
 		return nil, err
 	}
 
 	// Preserve the /api path from the Slack base URL when redirecting to the mock server.
-	connector.SetBaseURL(mockutils.ReplaceURLOrigin(connector.HTTPClient().Base, serverURL))
+	connector.SetUnitTestMockServerBaseURL(server.URL)
 
 	return connector, nil
 }

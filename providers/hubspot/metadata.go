@@ -2,6 +2,7 @@ package hubspot
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -11,11 +12,11 @@ import (
 	"github.com/amp-labs/connectors"
 	"github.com/amp-labs/connectors/common"
 	"github.com/amp-labs/connectors/common/logging"
+	"github.com/amp-labs/connectors/common/naming"
 	"github.com/amp-labs/connectors/internal/datautils"
-	"github.com/amp-labs/connectors/internal/goutils"
 	"github.com/amp-labs/connectors/internal/simultaneously"
-	"github.com/amp-labs/connectors/providers/hubspot/internal/crm/core"
-	"github.com/amp-labs/connectors/providers/hubspot/internal/crm/metadata"
+	"github.com/amp-labs/connectors/providers/hubspot/internal/core"
+	"github.com/amp-labs/connectors/providers/hubspot/internal/metadata"
 )
 
 type objectMetadataResult struct {
@@ -31,8 +32,7 @@ type objectMetadataError struct {
 func (c *Connector) UpsertMetadata(
 	ctx context.Context, params *common.UpsertMetadataParams,
 ) (*common.UpsertMetadataResult, error) {
-	// Delegated.
-	return c.crmAdapter.UpsertMetadata(ctx, params)
+	return c.customAdapter.UpsertMetadata(ctx, params)
 }
 
 // ListObjectMetadata returns object metadata for each object name provided.
@@ -112,11 +112,23 @@ func (c *Connector) ListObjectMetadata( // nolint:cyclop,funlen
 
 // getObjectMetadata returns object metadata for the given object name.
 func (c *Connector) getObjectMetadata(ctx context.Context, objectName string) (*common.ObjectMetadata, error) {
-	if core.ObjectsWithoutPropertiesAPISupport.Has(objectName) {
+	switch {
+	case core.CRMObjectsWithoutPropertiesAPISupport.Has(objectName):
 		return c.getObjectMetadataFromCRMSearch(ctx, objectName)
+	case core.MarketingObjects.Has(objectName):
+		// Object is part of Hubspot Marketing API.
+		// There is no discovery endpoint. Using local file with schema definition.
+		return metadata.Schemas.SelectOne(common.ModuleRoot, objectName)
+	case core.CommunicationObjects.Has(objectName):
+		return metadata.Schemas.SelectOne(common.ModuleRoot, objectName)
+	case core.MiscellaneousObjects.Has(objectName):
+		return metadata.Schemas.SelectOne(common.ModuleRoot, objectName)
+	case core.IsActivityEvent(objectName):
+		return c.sampleActivityEventMetadata(ctx, objectName)
+	default:
+		// Otherwise object belongs to Hubspot Objects API (sub-category of CRM namespace).
+		return c.getObjectMetadataFromPropertyAPI(ctx, objectName)
 	}
-
-	return c.getObjectMetadataFromPropertyAPI(ctx, objectName)
 }
 
 // This method describes objects that are part of Objects API using properties endpoint.
@@ -124,12 +136,12 @@ func (c *Connector) getObjectMetadata(ctx context.Context, objectName string) (*
 func (c *Connector) getObjectMetadataFromPropertyAPI(
 	ctx context.Context, objectName string,
 ) (*common.ObjectMetadata, error) {
-	url, err := c.getPropertiesURL(objectName)
+	url, err := c.getCRMPropertiesURL(objectName)
 	if err != nil {
 		return nil, err
 	}
 
-	rsp, err := c.Client.Get(ctx, url.String())
+	rsp, err := c.JSONHTTPClient().Get(ctx, url.String())
 	if err != nil {
 		return nil, fmt.Errorf("error fetching HubSpot fields: %w", err)
 	}
@@ -172,12 +184,12 @@ func (c *Connector) getObjectMetadataFromCRMSearch(
 	})
 	if err != nil {
 		// Ignore an error and fallback to static schema.
-		return metadata.Schemas.SelectOne(c.moduleID, objectName)
+		return metadata.Schemas.SelectOne(common.ModuleRoot, objectName)
 	}
 
 	if len(readResult.Data) == 0 {
 		// Read returned no rows.
-		return metadata.Schemas.SelectOne(c.moduleID, objectName)
+		return metadata.Schemas.SelectOne(common.ModuleRoot, objectName)
 	}
 
 	fields := make(map[string]common.FieldMetadata)
@@ -226,7 +238,7 @@ func (c *Connector) GetAccountInfo(ctx context.Context) (*AccountInfo, *common.J
 		return nil, nil, err
 	}
 
-	resp, err := c.Client.Get(ctx, url.String())
+	resp, err := c.JSONHTTPClient().Get(ctx, url.String())
 	if err != nil {
 		return nil, resp, fmt.Errorf("error fetching HubSpot token info: %w", err)
 	}
@@ -250,8 +262,12 @@ type fieldDescription struct {
 	FieldType string `json:"fieldType"`
 	// IsBuiltIn indicates whether the field is HubSpot-defined (built-in).
 	// If false or omitted, the field is custom.
-	IsBuiltIn            bool                      `json:"hubspotDefined"`
-	Options              []fieldEnumerationOption  `json:"options"`
+	IsBuiltIn bool                     `json:"hubspotDefined"`
+	Options   []fieldEnumerationOption `json:"options"`
+	// ReferencedObjectType, when set, marks the property as a foreign key to
+	// another HubSpot object (e.g. "OWNER", "COMPANY"). It overrides ValueType
+	// to ValueTypeReference in transformToFieldMetadata.
+	ReferencedObjectType string                    `json:"referencedObjectType"`
 	ModificationMetadata fieldModificationMetadata `json:"modificationMetadata"`
 }
 
@@ -302,16 +318,29 @@ func (f fieldDescription) transformToFieldMetadata() common.FieldMetadata {
 		valueType = common.ValueTypeOther
 	}
 
+	// Properties carrying a referencedObjectType are foreign keys to another
+	// HubSpot object (e.g. hubspot_owner_id → users, associatedcompanyid →
+	// companies). Surface that to consumers via ValueTypeReference + ReferenceTo
+	// so field-mapping UIs can render an object picker rather than a dropdown.
+	// Values are preserved so callers still get the available option list.
+	var referenceTo []string
+
+	if f.ReferencedObjectType != "" {
+		valueType = common.ValueTypeReference
+		referenceTo = []string{resolveReferencedObjectName(f.ReferencedObjectType)}
+	}
+
 	return common.FieldMetadata{
 		DisplayName:  f.Label,
 		ValueType:    valueType,
 		ProviderType: f.Type + "." + f.FieldType,
-		ReadOnly:     goutils.Pointer(f.ModificationMetadata.ReadOnlyValue),
-		IsCustom:     goutils.Pointer(!f.IsBuiltIn),
+		ReadOnly:     new(f.ModificationMetadata.ReadOnlyValue),
+		IsCustom:     new(!f.IsBuiltIn),
 		// IsRequired is not known from current struct,
 		// info is acquired by different API call and set by fetchRequiredFieldsBestEffort.
-		IsRequired: nil,
-		Values:     values,
+		IsRequired:  nil,
+		Values:      values,
+		ReferenceTo: referenceTo,
 	}
 }
 
@@ -394,7 +423,7 @@ func (c *Connector) fetchExternalMetadataEnumValues(
 	// For each external field that we support make an API call to fetch enumeration options.
 	// Store this values for each field within each object.
 	for _, discovery := range externalFields {
-		rsp, err := c.Client.Get(ctx, c.getURLFromRoot(discovery.EndpointPath))
+		rsp, err := c.JSONHTTPClient().Get(ctx, c.getURLFromRoot(discovery.EndpointPath))
 		if err != nil {
 			return nil, fmt.Errorf("error resolving external metadata values for HubSpot: %w", err)
 		}
@@ -521,12 +550,12 @@ type stage struct {
 func (c *Connector) fetchRequiredFieldsBestEffort(
 	ctx context.Context, objectName string, fields map[string]common.FieldMetadata,
 ) (map[string]common.FieldMetadata, error) {
-	url, err := c.getObjectSchemaURL(objectName)
+	url, err := c.getCRMSchemaURL(objectName)
 	if err != nil {
 		return nil, err
 	}
 
-	rsp, err := c.Client.Get(ctx, url.String())
+	rsp, err := c.JSONHTTPClient().Get(ctx, url.String())
 	if err != nil {
 		if isMissingSchemasScope(err) {
 			// User does not have permission to access the schema endpoint.
@@ -546,11 +575,9 @@ func (c *Connector) fetchRequiredFieldsBestEffort(
 		return nil, fmt.Errorf("error unmarshalling schemaResponse response into JSON: %w", err)
 	}
 
-	required := datautils.NewSetFromList(resp.RequiredProperties)
-
+	required := datautils.NewSetFromList(resp.RequiredProperties) // nolint:staticcheck
 	for name, meta := range fields {
-		isRequired := required.Has(name)
-		meta.IsRequired = goutils.Pointer(isRequired)
+		meta.IsRequired = new(required.Has(name))
 		fields[name] = meta
 	}
 
@@ -573,4 +600,80 @@ func isMissingSchemasScope(err error) bool {
 type schemaResponse struct {
 	RequiredProperties []string           `json:"requiredProperties"`
 	Properties         []fieldDescription `json:"properties"`
+}
+
+func (c *Connector) sampleActivityEventMetadata(ctx context.Context,
+	objectName string,
+) (*common.ObjectMetadata, error) {
+	url, err := c.getEventOccurrencesURL()
+	if err != nil {
+		return nil, err
+	}
+
+	eventType := core.ExtractActivityEventType(objectName)
+	url.WithQueryParam("eventType", eventType)
+	url.WithQueryParam("limit", "1")
+
+	resp, err := c.JSONHTTPClient().Get(ctx, url.String())
+	if err != nil {
+		return nil, err
+	}
+
+	activityEvent, err := common.UnmarshalJSON[activityEventResponse](resp)
+	if err != nil {
+		return nil, err
+	}
+
+	fields := make(common.FieldsMetadata)
+	for _, fieldName := range activityEvent.Fields() {
+		fields.AddFieldWithDisplayOnly(fieldName, fieldName)
+	}
+
+	displayFormat := func(name string) string {
+		displayName, _ := strings.CutPrefix(name, "e_")
+		displayName = naming.SeparateUnderscoreWords(displayName)
+
+		return naming.CapitalizeFirstLetterEveryWord(displayName)
+	}
+
+	return common.NewObjectMetadata(displayFormat(eventType), fields), nil
+}
+
+type activityEventResponse struct {
+	Results []activityEventResponseResult `json:"results"`
+}
+
+type activityEventResponseResult struct {
+	RawJSON          map[string]any
+	NestedProperties map[string]any
+}
+
+func (a *activityEventResponseResult) UnmarshalJSON(data []byte) error {
+	if err := json.Unmarshal(data, &a.RawJSON); err != nil {
+		return err
+	}
+
+	type nestedProperties struct {
+		Properties map[string]any `json:"properties"`
+	}
+
+	var nested nestedProperties
+	if err := json.Unmarshal(data, &nested); err != nil {
+		return err
+	}
+
+	a.NestedProperties = nested.Properties
+
+	return nil
+}
+
+func (r activityEventResponse) Fields() []string {
+	if len(r.Results) == 0 {
+		return nil
+	}
+
+	return datautils.MergeSets(
+		datautils.FromMap(r.Results[0].RawJSON).KeySet(),
+		datautils.FromMap(r.Results[0].NestedProperties).KeySet(),
+	).List()
 }

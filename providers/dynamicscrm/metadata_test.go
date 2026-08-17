@@ -4,13 +4,11 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/amp-labs/connectors"
 	"github.com/amp-labs/connectors/common"
-	"github.com/amp-labs/connectors/internal/goutils"
 	"github.com/amp-labs/connectors/test/utils/mockutils"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockcond"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockserver"
-	"github.com/amp-labs/connectors/test/utils/testroutines"
+	"github.com/amp-labs/connectors/test/utils/testconn"
 	"github.com/amp-labs/connectors/test/utils/testutils"
 )
 
@@ -24,7 +22,7 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 	responseContactsOptionsStates := testutils.DataFromFile(t, "metadata/contacts/options-states.json")
 	responseContactsOptionsStatuses := testutils.DataFromFile(t, "metadata/contacts/options-statuses.json")
 
-	tests := []testroutines.Metadata{
+	tests := []testconn.TestCaseListObjectMetadata{
 		{
 			Name:         "At least one object name must be queried",
 			Input:        nil,
@@ -35,7 +33,7 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 			Name:       "Failure to return attributes for an object",
 			Input:      []string{"butterflies"},
 			Server:     mockserver.Dummy(),
-			Comparator: testroutines.ComparatorSubsetMetadata,
+			Comparator: testconn.ComparatorSubsetMetadata,
 			Expected: &common.ListObjectMetadataResult{
 				Errors: map[string]error{
 					"butterflies": mockutils.ExpectedSubsetErrors{
@@ -59,7 +57,7 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 				}},
 				Default: mockserver.Response(http.StatusOK, []byte{}),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetMetadata,
+			Comparator: testconn.ComparatorSubsetMetadata,
 			Expected: &common.ListObjectMetadataResult{
 				Errors: map[string]error{
 					"contacts": mockutils.ExpectedSubsetErrors{
@@ -82,7 +80,7 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 				}},
 				Default: mockserver.Response(http.StatusOK, []byte{}),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetMetadata,
+			Comparator: testconn.ComparatorSubsetMetadata,
 			Expected: &common.ListObjectMetadataResult{
 				Errors: map[string]error{
 					"contacts": mockutils.ExpectedSubsetErrors{
@@ -117,7 +115,7 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 				}},
 				Default: mockserver.Response(http.StatusOK, []byte{}),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetMetadata,
+			Comparator: testconn.ComparatorSubsetMetadata,
 			Expected: &common.ListObjectMetadataResult{
 				Result: map[string]common.ObjectMetadata{
 					"contacts": {
@@ -127,70 +125,70 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 								DisplayName:  "New Password Input",
 								ValueType:    "string",
 								ProviderType: "StringType",
-								ReadOnly:     goutils.Pointer(false),
+								ReadOnly:     new(false),
 								Values:       nil,
 							},
 							"adx_publicprofilecopy": {
 								DisplayName:  "Public Profile Copy",
 								ValueType:    "string",
 								ProviderType: "MemoType",
-								ReadOnly:     goutils.Pointer(false),
+								ReadOnly:     new(false),
 								Values:       nil,
 							},
 							"merged": {
 								DisplayName:  "Merged",
 								ValueType:    "boolean",
 								ProviderType: "BooleanType",
-								ReadOnly:     goutils.Pointer(true),
+								ReadOnly:     new(true),
 								Values:       nil,
 							},
 							"versionnumber": {
 								DisplayName:  "Version Number",
 								ValueType:    "int",
 								ProviderType: "BigIntType",
-								ReadOnly:     goutils.Pointer(true),
+								ReadOnly:     new(true),
 								Values:       nil,
 							},
 							"importsequencenumber": {
 								DisplayName:  "Import Sequence Number",
 								ValueType:    "int",
 								ProviderType: "IntegerType",
-								ReadOnly:     goutils.Pointer(false),
+								ReadOnly:     new(false),
 								Values:       nil,
 							},
 							"exchangerate": {
 								DisplayName:  "Exchange Rate",
 								ValueType:    "float",
 								ProviderType: "DecimalType",
-								ReadOnly:     goutils.Pointer(true),
+								ReadOnly:     new(true),
 								Values:       nil,
 							},
 							"annualincome": {
 								DisplayName:  "Annual Income",
 								ValueType:    "float",
 								ProviderType: "MoneyType",
-								ReadOnly:     goutils.Pointer(false),
+								ReadOnly:     new(false),
 								Values:       nil,
 							},
 							"birthdate": {
 								DisplayName:  "Birthday",
 								ValueType:    "date",
 								ProviderType: "DateTimeType",
-								ReadOnly:     goutils.Pointer(false),
+								ReadOnly:     new(false),
 								Values:       nil,
 							},
 							"createdon": {
 								DisplayName:  "Created On",
 								ValueType:    "datetime",
 								ProviderType: "DateTimeType",
-								ReadOnly:     goutils.Pointer(true),
+								ReadOnly:     new(true),
 								Values:       nil,
 							},
 							"statecode": {
 								DisplayName:  "Status",
 								ValueType:    "singleSelect",
 								ProviderType: "StateType",
-								ReadOnly:     goutils.Pointer(false),
+								ReadOnly:     new(false),
 								Values: []common.FieldValue{{
 									Value:        "0",
 									DisplayValue: "Active",
@@ -203,7 +201,7 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 								DisplayName:  "Status Reason",
 								ValueType:    "singleSelect",
 								ProviderType: "StatusType",
-								ReadOnly:     goutils.Pointer(false),
+								ReadOnly:     new(false),
 								Values: []common.FieldValue{{
 									Value:        "1",
 									DisplayValue: "Active",
@@ -216,7 +214,7 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 								DisplayName:  "Gender",
 								ValueType:    "singleSelect",
 								ProviderType: "PicklistType",
-								ReadOnly:     goutils.Pointer(false),
+								ReadOnly:     new(false),
 								Values: []common.FieldValue{{
 									Value:        "1",
 									DisplayValue: "Male",
@@ -229,7 +227,7 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 								DisplayName:  "Marital Status",
 								ValueType:    "singleSelect",
 								ProviderType: "PicklistType",
-								ReadOnly:     goutils.Pointer(false),
+								ReadOnly:     new(false),
 								Values: []common.FieldValue{{
 									Value:        "1",
 									DisplayValue: "Single",
@@ -248,7 +246,7 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 								DisplayName:  "Education",
 								ValueType:    "singleSelect",
 								ProviderType: "PicklistType",
-								ReadOnly:     goutils.Pointer(false),
+								ReadOnly:     new(false),
 								Values: []common.FieldValue{{
 									Value:        "1",
 									DisplayValue: "Default Value",
@@ -258,21 +256,21 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 								DisplayName:  "LeadSourceCodeName",
 								ValueType:    "other",
 								ProviderType: "VirtualType",
-								ReadOnly:     goutils.Pointer(true),
+								ReadOnly:     new(true),
 								Values:       nil,
 							},
 							"_accountid_value": {
 								DisplayName:  "Account",
 								ValueType:    "other",
 								ProviderType: "LookupType",
-								ReadOnly:     goutils.Pointer(true),
+								ReadOnly:     new(true),
 								Values:       nil,
 							},
 							"_createdby_value": {
 								DisplayName:  "Created By",
 								ValueType:    "other",
 								ProviderType: "LookupType",
-								ReadOnly:     goutils.Pointer(true),
+								ReadOnly:     new(true),
 								Values:       nil,
 							},
 						},
@@ -298,7 +296,7 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 		t.Run(tt.Name, func(t *testing.T) {
 			t.Parallel()
 
-			tt.Run(t, func() (connectors.ObjectMetadataConnector, error) {
+			tt.Run(t, func() (testconn.TestableMetadataReader, error) {
 				return constructTestConnector(tt.Server.URL)
 			})
 		})

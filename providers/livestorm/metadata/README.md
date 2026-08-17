@@ -1,0 +1,7 @@
+# Metadata
+
+The static file `schemas.json` is embedded by `metadata.go` and defines metadata objects for the Livestorm deep connector. This schema was authored manually from the public Livestorm API documentation:
+
+- [List events](https://developers.livestorm.co/reference/get_events)
+- [List people](https://developers.livestorm.co/reference/get_people)
+- [List people attributes](https://developers.livestorm.co/reference/get_people-attributes)

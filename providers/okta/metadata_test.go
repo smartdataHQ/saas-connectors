@@ -1,19 +1,19 @@
 package okta
 
 import (
-	"net/http"
+	"net/http/httptest"
 	"testing"
 
-	"github.com/amp-labs/connectors"
 	"github.com/amp-labs/connectors/common"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockserver"
-	"github.com/amp-labs/connectors/test/utils/testroutines"
+	"github.com/amp-labs/connectors/test/utils/testconn"
+	"github.com/amp-labs/connectors/test/utils/testutils"
 )
 
 func TestListObjectMetadata(t *testing.T) {
 	t.Parallel()
 
-	tests := []testroutines.Metadata{
+	tests := []testconn.TestCaseListObjectMetadata{
 		{
 			Name:         "At least one object name must be queried",
 			Input:        nil,
@@ -44,9 +44,11 @@ func TestListObjectMetadata(t *testing.T) {
 						},
 					},
 				},
-				Errors: nil,
+				Errors: map[string]error{
+					"users": testutils.StringError("cannot resolve custom fields"),
+				},
 			},
-			Comparator:   testroutines.ComparatorSubsetMetadata,
+			Comparator:   testconn.ComparatorSubsetMetadata,
 			ExpectedErrs: nil,
 		},
 		{
@@ -69,9 +71,11 @@ func TestListObjectMetadata(t *testing.T) {
 						},
 					},
 				},
-				Errors: nil,
+				Errors: map[string]error{
+					"groups": testutils.StringError("cannot resolve custom fields"),
+				},
 			},
-			Comparator:   testroutines.ComparatorSubsetMetadata,
+			Comparator:   testconn.ComparatorSubsetMetadata,
 			ExpectedErrs: nil,
 		},
 		{
@@ -97,7 +101,7 @@ func TestListObjectMetadata(t *testing.T) {
 				},
 				Errors: nil,
 			},
-			Comparator:   testroutines.ComparatorSubsetMetadata,
+			Comparator:   testconn.ComparatorSubsetMetadata,
 			ExpectedErrs: nil,
 		},
 		{
@@ -122,7 +126,7 @@ func TestListObjectMetadata(t *testing.T) {
 				},
 				Errors: nil,
 			},
-			Comparator:   testroutines.ComparatorSubsetMetadata,
+			Comparator:   testconn.ComparatorSubsetMetadata,
 			ExpectedErrs: nil,
 		},
 		{
@@ -145,7 +149,7 @@ func TestListObjectMetadata(t *testing.T) {
 				},
 				Errors: nil,
 			},
-			Comparator:   testroutines.ComparatorSubsetMetadata,
+			Comparator:   testconn.ComparatorSubsetMetadata,
 			ExpectedErrs: nil,
 		},
 		{
@@ -168,7 +172,7 @@ func TestListObjectMetadata(t *testing.T) {
 				},
 				Errors: nil,
 			},
-			Comparator:   testroutines.ComparatorSubsetMetadata,
+			Comparator:   testconn.ComparatorSubsetMetadata,
 			ExpectedErrs: nil,
 		},
 		{
@@ -191,7 +195,7 @@ func TestListObjectMetadata(t *testing.T) {
 				},
 				Errors: nil,
 			},
-			Comparator:   testroutines.ComparatorSubsetMetadata,
+			Comparator:   testconn.ComparatorSubsetMetadata,
 			ExpectedErrs: nil,
 		},
 		{
@@ -215,7 +219,7 @@ func TestListObjectMetadata(t *testing.T) {
 				},
 				Errors: nil,
 			},
-			Comparator:   testroutines.ComparatorSubsetMetadata,
+			Comparator:   testconn.ComparatorSubsetMetadata,
 			ExpectedErrs: nil,
 		},
 		{
@@ -237,7 +241,7 @@ func TestListObjectMetadata(t *testing.T) {
 				},
 				Errors: nil,
 			},
-			Comparator:   testroutines.ComparatorSubsetMetadata,
+			Comparator:   testconn.ComparatorSubsetMetadata,
 			ExpectedErrs: nil,
 		},
 		{
@@ -282,9 +286,12 @@ func TestListObjectMetadata(t *testing.T) {
 						},
 					},
 				},
-				Errors: nil,
+				Errors: map[string]error{
+					"users":  testutils.StringError("cannot resolve custom fields"),
+					"groups": testutils.StringError("cannot resolve custom fields"),
+				},
 			},
-			Comparator:   testroutines.ComparatorSubsetMetadata,
+			Comparator:   testconn.ComparatorSubsetMetadata,
 			ExpectedErrs: nil,
 		},
 	}
@@ -293,25 +300,25 @@ func TestListObjectMetadata(t *testing.T) {
 		t.Run(tt.Name, func(t *testing.T) {
 			t.Parallel()
 
-			tt.Run(t, func() (connectors.ObjectMetadataConnector, error) {
-				return constructTestConnector(tt.Server.URL)
+			tt.Run(t, func() (testconn.TestableMetadataReader, error) {
+				return constructTestConnector(tt.Server)
 			})
 		})
 	}
 }
 
-func constructTestConnector(serverURL string) (*Connector, error) {
+func constructTestConnector(server *httptest.Server) (*Connector, error) {
 	connector, err := NewConnector(
 		common.ConnectorParams{
 			Module:              common.ModuleRoot,
-			AuthenticatedClient: &http.Client{},
+			AuthenticatedClient: server.Client(),
 		},
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	connector.SetUnitTestBaseURL(serverURL)
+	connector.SetUnitTestBaseURL(server.URL)
 
 	return connector, nil
 }

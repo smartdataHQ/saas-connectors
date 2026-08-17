@@ -4,11 +4,10 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/amp-labs/connectors"
 	"github.com/amp-labs/connectors/common"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockcond"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockserver"
-	"github.com/amp-labs/connectors/test/utils/testroutines"
+	"github.com/amp-labs/connectors/test/utils/testconn"
 	"github.com/amp-labs/connectors/test/utils/testutils"
 )
 
@@ -18,7 +17,7 @@ func TestDelete(t *testing.T) {
 	// DevRev accounts-delete-response from schema: empty object {}
 	responseAccountsDelete := testutils.DataFromFile(t, "write-accounts-delete-response.json")
 
-	tests := []testroutines.Delete{
+	tests := []testconn.TestCaseDelete{
 		{
 			Name: "Delete account successfully",
 			Input: common.DeleteParams{
@@ -65,7 +64,7 @@ func TestDelete(t *testing.T) {
 		t.Run(tt.Name, func(t *testing.T) {
 			t.Parallel()
 
-			tt.Run(t, func() (connectors.DeleteConnector, error) {
+			tt.Run(t, func() (testconn.TestableDeleter, error) {
 				return constructTestConnector(tt.Server.URL)
 			})
 		})
