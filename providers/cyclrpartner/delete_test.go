@@ -4,11 +4,10 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/amp-labs/connectors"
 	"github.com/amp-labs/connectors/common"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockcond"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockserver"
-	"github.com/amp-labs/connectors/test/utils/testroutines"
+	"github.com/amp-labs/connectors/test/utils/testconn"
 )
 
 func TestDelete(t *testing.T) {
@@ -16,7 +15,7 @@ func TestDelete(t *testing.T) {
 
 	refusalBody := []byte(`{"Message":"Cannot delete Account with active Cycles."}`)
 
-	tests := []testroutines.Delete{
+	tests := []testconn.TestCaseDelete{
 		{
 			Name: "Delete account succeeds on 204",
 			Input: common.DeleteParams{
@@ -62,7 +61,7 @@ func TestDelete(t *testing.T) {
 		t.Run(tt.Name, func(t *testing.T) {
 			t.Parallel()
 
-			tt.Run(t, func() (connectors.DeleteConnector, error) {
+			tt.Run(t, func() (testconn.TestableDeleter, error) {
 				return constructTestConnector(tt.Server.URL)
 			})
 		})

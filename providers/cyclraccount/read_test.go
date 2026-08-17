@@ -8,7 +8,7 @@ import (
 	"github.com/amp-labs/connectors/common"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockcond"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockserver"
-	"github.com/amp-labs/connectors/test/utils/testroutines"
+	"github.com/amp-labs/connectors/test/utils/testconn"
 )
 
 func TestRead(t *testing.T) {
@@ -18,7 +18,7 @@ func TestRead(t *testing.T) {
 		{"Id":"c0000001-0000-0000-0000-000000000001","Name":"Sample Cycle","Status":"Paused","TemplateId":"t0000001-0000-0000-0000-000000000001","ErrorCount":0}
 	]`)
 
-	tests := []testroutines.Read{
+	tests := []testconn.TestCaseRead{
 		{
 			Name: "List templates in Account scope routes to /v1.0/templates",
 			Input: common.ReadParams{
@@ -38,7 +38,7 @@ func TestRead(t *testing.T) {
 					{"Id":"t1","Name":"Template One"}
 				]`)),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetRead,
+			Comparator: testconn.ComparatorSubsetRead,
 			Expected: &common.ReadResult{
 				Rows: 1,
 				Data: []common.ReadResultRow{{
@@ -64,7 +64,7 @@ func TestRead(t *testing.T) {
 					{"Id":"s1","Name":"Step One","StepType":"Action","CycleId":"c0000001-0000-0000-0000-000000000001"}
 				]`)),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetRead,
+			Comparator: testconn.ComparatorSubsetRead,
 			Expected: &common.ReadResult{
 				Rows: 1,
 				Data: []common.ReadResultRow{{
@@ -94,7 +94,7 @@ func TestRead(t *testing.T) {
 					{"Id":"p1","Name":"Token","Value":"abc","ApiKey":"secret-value"}
 				]`)),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetRead,
+			Comparator: testconn.ComparatorSubsetRead,
 			Expected: &common.ReadResult{
 				Rows: 1,
 				Data: []common.ReadResultRow{{
@@ -127,7 +127,7 @@ func TestRead(t *testing.T) {
 					{"Id":"ac1","Name":"SFDC Install","AuthenticationState":"Authenticated","AuthValue":"should-not-appear"}
 				]`)),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetRead,
+			Comparator: testconn.ComparatorSubsetRead,
 			Expected: &common.ReadResult{
 				Rows: 1,
 				Data: []common.ReadResultRow{{
@@ -162,7 +162,7 @@ func TestRead(t *testing.T) {
 					mockserver.Response(http.StatusOK, cyclesPage),
 				),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetRead,
+			Comparator: testconn.ComparatorSubsetRead,
 			Expected: &common.ReadResult{
 				Rows: 1,
 				Data: []common.ReadResultRow{{
@@ -187,7 +187,7 @@ func TestRead(t *testing.T) {
 		t.Run(tt.Name, func(t *testing.T) {
 			t.Parallel()
 
-			tt.Run(t, func() (connectors.ReadConnector, error) {
+			tt.Run(t, func() (testconn.TestableReader, error) {
 				return constructTestConnector(tt.Server.URL)
 			})
 		})

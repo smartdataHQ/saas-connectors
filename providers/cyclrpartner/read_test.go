@@ -8,7 +8,7 @@ import (
 	"github.com/amp-labs/connectors/common"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockcond"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockserver"
-	"github.com/amp-labs/connectors/test/utils/testroutines"
+	"github.com/amp-labs/connectors/test/utils/testconn"
 )
 
 func TestRead(t *testing.T) { //nolint:funlen
@@ -27,7 +27,7 @@ func TestRead(t *testing.T) { //nolint:funlen
 
 	errorResponse := []byte(`{"Message":"The resource you are looking for could not be found."}`)
 
-	tests := []testroutines.Read{
+	tests := []testconn.TestCaseRead{
 		{
 			Name: "List accounts first page has next-page token",
 			Input: common.ReadParams{
@@ -47,7 +47,7 @@ func TestRead(t *testing.T) { //nolint:funlen
 					mockserver.Response(http.StatusOK, firstPageResponse),
 				),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetRead,
+			Comparator: testconn.ComparatorSubsetRead,
 			Expected: &common.ReadResult{
 				Rows: 2,
 				Data: []common.ReadResultRow{{
@@ -90,7 +90,7 @@ func TestRead(t *testing.T) { //nolint:funlen
 					mockserver.Response(http.StatusOK, lastPageResponse),
 				),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetRead,
+			Comparator: testconn.ComparatorSubsetRead,
 			Expected: &common.ReadResult{
 				Rows: 1,
 				Data: []common.ReadResultRow{{
@@ -116,7 +116,7 @@ func TestRead(t *testing.T) { //nolint:funlen
 				Setup:  mockserver.ContentJSON(),
 				Always: mockserver.Response(http.StatusOK, emptyPageResponse),
 			}.Server(),
-			Comparator: testroutines.ComparatorPagination,
+			Comparator: testconn.ComparatorPagination,
 			Expected: &common.ReadResult{
 				Rows:     0,
 				NextPage: "",
@@ -153,7 +153,7 @@ func TestRead(t *testing.T) { //nolint:funlen
 					{"Id":"t2","Name":"Template Two"}
 				]`)),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetRead,
+			Comparator: testconn.ComparatorSubsetRead,
 			Expected: &common.ReadResult{
 				Rows: 2,
 				Data: []common.ReadResultRow{{
@@ -174,7 +174,7 @@ func TestRead(t *testing.T) { //nolint:funlen
 		t.Run(tt.Name, func(t *testing.T) {
 			t.Parallel()
 
-			tt.Run(t, func() (connectors.ReadConnector, error) {
+			tt.Run(t, func() (testconn.TestableReader, error) {
 				return constructTestConnector(tt.Server.URL)
 			})
 		})

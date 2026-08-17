@@ -11,11 +11,11 @@ import (
 // For cyclrAccount the allowed groups from FR-049 are:
 //   - Cycle control:       cycles, cycles:activate, cycles:deactivate
 //   - Cycle diagnostics:   cycleSteps, cycleSteps:prerequisites (plus glob
-//                          cycles/*/steps — not in the schema map, registered
-//                          directly in supports.go)
+//     cycles/*/steps — not in the schema map, registered
+//     directly in supports.go)
 //   - Step configuration:  stepParameters, stepFieldMappings (plus globs
-//                          steps/*/parameters, steps/*/fieldmappings,
-//                          steps/*/prerequisites — same note)
+//     steps/*/parameters, steps/*/fieldmappings,
+//     steps/*/prerequisites — same note)
 //   - Connector setup:     accountConnectors
 //   - Catalog:             templates (read-only view)
 func TestObjectNameTaxonomy(t *testing.T) {

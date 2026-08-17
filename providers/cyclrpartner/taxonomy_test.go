@@ -22,7 +22,7 @@ func TestObjectNameTaxonomy(t *testing.T) {
 		// Account lifecycle
 		objectNameAccounts:        {},
 		objectNameAccountsSuspend: {},
-		objectNameAccountsResume: {},
+		objectNameAccountsResume:  {},
 		// Catalog (Partner-scope)
 		"templates": {},
 	}
