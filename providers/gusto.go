@@ -1,8 +1,13 @@
+//nolint:dupl
 package providers
 
-const Gusto Provider = "gusto"
+const (
+	Gusto     Provider = "gusto"
+	GustoDemo Provider = "gustoDemo"
+)
 
-func init() {
+func init() { //nolint:funlen
+	// Gusto Production configuration
 	SetInfo(Gusto, ProviderInfo{
 		DisplayName: "Gusto",
 		AuthType:    Oauth2,
@@ -21,10 +26,10 @@ func init() {
 				Upsert: false,
 				Delete: false,
 			},
-			Proxy:     false,
-			Read:      false,
+			Proxy:     true,
+			Read:      true,
 			Subscribe: false,
-			Write:     false,
+			Write:     true,
 		},
 		Media: &Media{
 			DarkMode: &MediaTypeDarkMode{
@@ -34,6 +39,60 @@ func init() {
 			Regular: &MediaTypeRegular{
 				IconURL: "https://res.cloudinary.com/dycvts6vp/image/upload/v1775077438/media/gusto.com_1775077438.jpg",
 				LogoURL: "https://res.cloudinary.com/dycvts6vp/image/upload/v1775077412/media/gusto.com_1775077412.svg",
+			},
+		},
+
+		PostAuthInfoNeeded: true,
+		Metadata: &ProviderMetadata{
+			PostAuthentication: []MetadataItemPostAuthentication{
+				{
+					Name: "companyId",
+				},
+			},
+		},
+	})
+
+	// Gusto Demo configuration
+	SetInfo(GustoDemo, ProviderInfo{
+		DisplayName: "Gusto Demo",
+		AuthType:    Oauth2,
+		BaseURL:     "https://api.gusto-demo.com",
+		Oauth2Opts: &Oauth2Opts{
+			GrantType:                 AuthorizationCode,
+			AuthURL:                   "https://api.gusto-demo.com/oauth/authorize",
+			TokenURL:                  "https://api.gusto-demo.com/oauth/token",
+			ExplicitScopesRequired:    false,
+			ExplicitWorkspaceRequired: false,
+		},
+		Support: Support{
+			BulkWrite: BulkWriteSupport{
+				Insert: false,
+				Update: false,
+				Upsert: false,
+				Delete: false,
+			},
+			Proxy:     true,
+			Read:      true,
+			Subscribe: false,
+			Write:     true,
+		},
+		Media: &Media{
+			DarkMode: &MediaTypeDarkMode{
+				IconURL: "https://res.cloudinary.com/dycvts6vp/image/upload/v1775077438/media/gusto.com_1775077438.jpg",
+				LogoURL: "https://res.cloudinary.com/dycvts6vp/image/upload/v1775077356/media/gusto.com_1775077354.svg",
+			},
+			Regular: &MediaTypeRegular{
+				IconURL: "https://res.cloudinary.com/dycvts6vp/image/upload/v1775077438/media/gusto.com_1775077438.jpg",
+				LogoURL: "https://res.cloudinary.com/dycvts6vp/image/upload/v1775077412/media/gusto.com_1775077412.svg",
+			},
+		},
+
+		PostAuthInfoNeeded: true,
+		Metadata: &ProviderMetadata{
+			PostAuthentication: []MetadataItemPostAuthentication{
+				{
+					Name: "companyId",
+				},
 			},
 		},
 	})

@@ -2,13 +2,12 @@ package salesforce
 
 import (
 	"net/http"
-	"reflect"
 	"testing"
 
 	"github.com/amp-labs/connectors/common"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockcond"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockserver"
-	"github.com/amp-labs/connectors/test/utils/testroutines"
+	"github.com/amp-labs/connectors/test/utils/testconn"
 	"github.com/amp-labs/connectors/test/utils/testutils"
 )
 
@@ -248,49 +247,63 @@ func TestGetBulkQueryResults(t *testing.T) { // nolint:dupl
 	}
 }
 
-func statusCodeComparator(serverURL string, actual, expected *http.Response) bool {
-	return actual.StatusCode == expected.StatusCode
+func statusCodeComparator(serverURL string, actual, expected *http.Response) *testutils.CompareResult {
+	result := testutils.NewCompareResult()
+
+	result.Assert("StatusCode", expected.StatusCode, actual.StatusCode)
+
+	return result
 }
 
-func testJobResultsComparator(serverURL string, actual, expected *JobResults) bool {
+func testJobResultsComparator(serverURL string, actual, expected *JobResults) *testutils.CompareResult {
 	actual.JobInfo = nil // ignore JobInfo when comparing
 
-	return reflect.DeepEqual(actual, expected)
+	result := testutils.NewCompareResult()
+
+	result.Assert("JobResults", expected, actual)
+
+	return result
 }
 
-func testConciseJobInfoComparator(serverURL string, actual *GetJobInfoResult, expected *GetJobInfoResult) bool {
-	return actual.Id == expected.Id &&
-		actual.Object == expected.Object &&
-		actual.State == expected.State &&
-		actual.CreatedDate == expected.CreatedDate
+func testConciseJobInfoComparator(
+	serverURL string, actual *GetJobInfoResult, expected *GetJobInfoResult,
+) *testutils.CompareResult {
+	result := testutils.NewCompareResult()
+
+	result.Assert("Id", expected.Id, actual.Id)
+	result.Assert("Object", expected.Object, actual.Object)
+	result.Assert("State", expected.State, actual.State)
+	result.Assert("CreatedDate", expected.CreatedDate, actual.CreatedDate)
+
+	return result
 }
 
 type (
-	testCaseTypeJobInfo                 = testroutines.TestCase[string, *GetJobInfoResult]
+	testCaseTypeJobInfo                 = testconn.TestCase[string, *GetJobInfoResult]
 	bulkJobInfoTestCase                 testCaseTypeJobInfo
 	bulkJobInfoQueryTestCase            testCaseTypeJobInfo
-	testCaseTypeJobResults              = testroutines.TestCase[string, *JobResults]
+	testCaseTypeJobResults              = testconn.TestCase[string, *JobResults]
 	bulkJobResultTestCase               testCaseTypeJobResults
-	testCaseTypeHTTPResponse            = testroutines.TestCase[string, *http.Response]
+	testCaseTypeHTTPResponse            = testconn.TestCase[string, *http.Response]
 	bulkGetSuccessfulJobResultsTestCase testCaseTypeHTTPResponse
 	bulkGetBulkQueryResultsTestCase     testCaseTypeHTTPResponse
 )
 
-func (c bulkJobInfoTestCase) Run(t *testing.T, builder testroutines.ConnectorBuilder[*Connector]) {
+func (c bulkJobInfoTestCase) Run(t *testing.T, builder testconn.ConnectorBuilder[*Connector]) {
 	t.Helper()
 	conn := builder.Build(t, c.Name)
 	output, err := conn.GetJobInfo(t.Context(), c.Input)
 	testCaseTypeJobInfo(c).Validate(t, err, output)
 }
 
-func (c bulkJobInfoQueryTestCase) Run(t *testing.T, builder testroutines.ConnectorBuilder[*Connector]) {
+func (c bulkJobInfoQueryTestCase) Run(t *testing.T, builder testconn.ConnectorBuilder[*Connector]) {
 	t.Helper()
 	conn := builder.Build(t, c.Name)
 	output, err := conn.GetBulkQueryInfo(t.Context(), c.Input)
 	testCaseTypeJobInfo(c).Validate(t, err, output)
 }
 
-func (c bulkJobResultTestCase) Run(t *testing.T, builder testroutines.ConnectorBuilder[*Connector]) {
+func (c bulkJobResultTestCase) Run(t *testing.T, builder testconn.ConnectorBuilder[*Connector]) {
 	t.Helper()
 	conn := builder.Build(t, c.Name)
 	output, err := conn.GetJobResults(t.Context(), c.Input)
@@ -298,7 +311,7 @@ func (c bulkJobResultTestCase) Run(t *testing.T, builder testroutines.ConnectorB
 }
 
 // nolint: lll
-func (c bulkGetSuccessfulJobResultsTestCase) Run(t *testing.T, builder testroutines.ConnectorBuilder[*Connector]) {
+func (c bulkGetSuccessfulJobResultsTestCase) Run(t *testing.T, builder testconn.ConnectorBuilder[*Connector]) {
 	t.Helper()
 	conn := builder.Build(t, c.Name)
 
@@ -311,7 +324,7 @@ func (c bulkGetSuccessfulJobResultsTestCase) Run(t *testing.T, builder testrouti
 }
 
 // nolint: lll
-func (c bulkGetBulkQueryResultsTestCase) Run(t *testing.T, builder testroutines.ConnectorBuilder[*Connector]) {
+func (c bulkGetBulkQueryResultsTestCase) Run(t *testing.T, builder testconn.ConnectorBuilder[*Connector]) {
 	t.Helper()
 	conn := builder.Build(t, c.Name)
 

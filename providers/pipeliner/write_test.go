@@ -4,11 +4,10 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/amp-labs/connectors"
 	"github.com/amp-labs/connectors/common"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockcond"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockserver"
-	"github.com/amp-labs/connectors/test/utils/testroutines"
+	"github.com/amp-labs/connectors/test/utils/testconn"
 	"github.com/amp-labs/connectors/test/utils/testutils"
 )
 
@@ -20,7 +19,7 @@ func TestWrite(t *testing.T) { // nolint:funlen,cyclop
 	responseCreateNote := testutils.DataFromFile(t, "create-note.json")
 	responseUpdateNote := testutils.DataFromFile(t, "update-note.json")
 
-	tests := []testroutines.Write{
+	tests := []testconn.TestCaseWrite{
 		{
 			Name:         "Write object must be included",
 			Server:       mockserver.Dummy(),
@@ -100,7 +99,7 @@ func TestWrite(t *testing.T) { // nolint:funlen,cyclop
 				If:    mockcond.MethodPOST(),
 				Then:  mockserver.Response(http.StatusOK, responseCreateNote),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetWrite,
+			Comparator: testconn.ComparatorSubsetWrite,
 			Expected: &common.WriteResult{
 				Success:  true,
 				RecordId: "0190978c-d6d1-de35-3f6d-7cf0a0e264db",
@@ -125,7 +124,7 @@ func TestWrite(t *testing.T) { // nolint:funlen,cyclop
 				If:    mockcond.MethodPATCH(),
 				Then:  mockserver.Response(http.StatusOK, responseUpdateNote),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetWrite,
+			Comparator: testconn.ComparatorSubsetWrite,
 			Expected: &common.WriteResult{
 				Success:  true,
 				RecordId: "0190978c-d6d1-de35-3f6d-7cf0a0e264db",
@@ -145,7 +144,7 @@ func TestWrite(t *testing.T) { // nolint:funlen,cyclop
 		t.Run(tt.Name, func(t *testing.T) {
 			t.Parallel()
 
-			tt.Run(t, func() (connectors.WriteConnector, error) {
+			tt.Run(t, func() (testconn.TestableWriter, error) {
 				return constructTestConnector(tt.Server.URL)
 			})
 		})

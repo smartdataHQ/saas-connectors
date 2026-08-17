@@ -10,6 +10,17 @@ import (
 	"github.com/spyzhov/ajson"
 )
 
+// ArrayWildIndex represents a wildcard index in JSONPath notation.
+//
+// Normally, a concrete numeric index is used to access a specific array item.
+// For our connectors, we often need to match all items in an array, so `*` is used instead.
+//
+// Example:
+//
+//	"$['line_items']['data'][*]['description']"
+//	==> line_items[data][0,1,2, ... ][description]
+const ArrayWildIndex = "*"
+
 // SelectedFieldsFunc returns a whitelist of the original record, it handles the nested fields too.
 // Second output is the identifier of this record.
 type SelectedFieldsFunc func(node *ajson.Node, fields []string) (map[string]any, string, error)
@@ -73,7 +84,7 @@ func SelectFields(
 	output := make(map[string]any)
 
 	for field := range fields {
-		path := parseJSONPath(field)
+		path := ParseJSONPath(field)
 		if value, ok := getNestedValue(record, path); ok {
 			setNestedValue(output, path, value)
 		}
@@ -82,15 +93,18 @@ func SelectFields(
 	return output
 }
 
-// parseJSONPath converts a JSONPath-like string into a slice of keys.
-// Example:
+// ParseJSONPath splits a JSONPath-like expression into path tokens.
+//
+// Supported tokens are object keys in bracket form and array wildcards:
 //
 //	$['payload']['body']['data'] -> ["payload", "body", "data"]
+//	$['items'][*]['currency']     -> ["items", "*", "currency"]
 //
-// If the input does not match the $[...] pattern, it is returned as a single key.
-func parseJSONPath(path string) []string {
-	// regex to match ['key']
-	re := regexp.MustCompile(`\['([^']+)'\]`)
+// If the input does not contain any supported path tokens, the original
+// string is returned as a single-element path.
+func ParseJSONPath(path string) []string {
+	// regex to match ['key'] or [*]
+	re := regexp.MustCompile(`\['([^']+)'\]|\[(\*)\]`)
 	matches := re.FindAllStringSubmatch(path, -1)
 
 	// if no matches, return the path itself as a single key
@@ -98,75 +112,155 @@ func parseJSONPath(path string) []string {
 		return []string{path}
 	}
 
+	// A match is an array of tuples [][]string.
+	// Here is an example of some tuples:
+	//	[0]: "['line_items']"
+	//	[1]: "line_items"
+	//	[2]: ""
+	//
+	//	[0]: "[*]"
+	//	[1]: ""
+	//	[2]: "*"
 	keys := make([]string, 0, len(matches))
 	for _, m := range matches {
-		if len(m) > 1 {
+		if len(m) > 1 && m[1] != "" {
 			keys = append(keys, m[1])
+		} else if len(m) > 2 && m[2] == ArrayWildIndex {
+			keys = append(keys, ArrayWildIndex)
 		}
 	}
 
 	return keys
 }
 
-// getNestedValue retrieves a value from a nested map following the path.
-// Returns false if any key along the path is missing or not a map (except the leaf).
-func getNestedValue(m map[string]any, path []string) (any, bool) {
-	curr := m
-	for i, key := range path {
-		v, ok := curr[key]
-		if !ok {
-			return nil, false
-		}
-
-		if i == len(path)-1 {
-			return v, true
-		}
-
-		nextMap, ok := v.(map[string]any)
-		if !ok {
-			return nil, false
-		}
-
-		curr = nextMap
+// getNestedValue retrieves a value from a nested structure using the supplied path.
+//
+// The input may contain nested maps and arrays. A path token of "*" is treated as
+// an array wildcard, meaning the next path segment is applied to every element
+// of the array.
+//
+// Examples:
+//
+//	["payload", "body", "data"]       -> map traversal only
+//	["items", "*", "currency"]        -> collect currency from each array item
+//
+// The function returns false if any path segment is missing, has the wrong type,
+// or if the path cannot be resolved.
+func getNestedValue(root any, path []string) (any, bool) { // nolint:lll,cyclop
+	if len(path) == 0 {
+		return root, true
 	}
 
-	return nil, false
+	switch node := root.(type) {
+	case map[string]any:
+		key := path[0]
+
+		child, ok := node[key]
+		if !ok {
+			return nil, false
+		}
+
+		// If the next token is "*", the current value must be an array.
+		if len(path) > 1 && path[1] == ArrayWildIndex {
+			arr, ok := child.([]any)
+			if !ok {
+				return nil, false
+			}
+
+			if len(path) < 3 { // nolint:mnd
+				return nil, false
+			}
+
+			result := make([]any, 0, len(arr))
+			for _, item := range arr {
+				v, ok := getNestedValue(item, path[2:])
+				if !ok {
+					return nil, false
+				}
+
+				result = append(result, v)
+			}
+
+			return result, true
+		}
+
+		return getNestedValue(child, path[1:])
+
+	case []any:
+		return nil, false
+
+	default:
+		return node, len(path) == 0
+	}
 }
 
-// setNestedValue inserts a value into a map at the specified path.
-// Creates intermediate maps if needed.
-func setNestedValue(m map[string]any, path []string, value any) {
-	curr := m
+// setNestedValue inserts a value into a nested map at the specified path.
+//
+// Intermediate maps and arrays are created as needed. Array paths use "*"
+// as the wildcard token, and the value must be a []any when writing through
+// an array segment.
+func setNestedValue(root map[string]any, path []string, value any) {
+	setNode(root, path, value)
+}
 
-	for i, rawKey := range path {
-		// The key must be case-insensitive.
-		// The record returned by ReadConnector has keys always in lower case.
+func setNode(current any, path []string, value any) any { // nolint:cyclop
+	if len(path) == 0 {
+		return value
+	}
+
+	rawKey := path[0]
+
+	switch node := current.(type) {
+	case map[string]any:
+		// Keys are normalized to lowercase because connector payload keys are lowercased.
 		key := strings.ToLower(rawKey)
+		if len(path) == 1 {
+			node[key] = value
 
-		if i == len(path)-1 {
-			curr[key] = value
-
-			return
+			return current
 		}
 
-		next, ok := curr[key]
+		next, ok := node[key]
+		if !ok || next == nil {
+			next = makeContainer(path[1])
+			node[key] = next
+		}
+
+		node[key] = setNode(next, path[1:], value)
+
+		return current
+
+	case []any:
+		vals, ok := value.([]any)
 		if !ok {
-			newMap := make(map[string]any)
-			curr[key] = newMap
-			curr = newMap
-
-			continue
+			return current
 		}
 
-		nextMap, ok := next.(map[string]any)
-		if !ok {
-			newMap := make(map[string]any)
-			curr[key] = newMap
-			curr = newMap
-
-			continue
+		if len(node) < len(vals) {
+			tmp := make([]any, len(vals))
+			copy(tmp, node)
+			node = tmp
 		}
 
-		curr = nextMap
+		for i := range vals {
+			if node[i] == nil {
+				node[i] = make(map[string]any)
+			}
+
+			node[i] = setNode(node[i], path[1:], vals[i])
+		}
+
+		return node
+	}
+
+	return current
+}
+
+func makeContainer(next string) any {
+	switch next {
+	case ArrayWildIndex:
+		return []any{}
+	default:
+		return make(map[string]any)
 	}
 }

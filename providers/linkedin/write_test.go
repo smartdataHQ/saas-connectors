@@ -3,21 +3,21 @@ package linkedin
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
-	"github.com/amp-labs/connectors"
 	"github.com/amp-labs/connectors/common"
 	"github.com/amp-labs/connectors/providers"
 	"github.com/amp-labs/connectors/test/utils/mockutils"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockcond"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockserver"
-	"github.com/amp-labs/connectors/test/utils/testroutines"
+	"github.com/amp-labs/connectors/test/utils/testconn"
 )
 
 func TestAdsWrite(t *testing.T) { // nolint:funlen,gocognit,cyclop,maintidx
 	t.Parallel()
 
-	tests := []testroutines.Write{
+	tests := []testconn.TestCaseWrite{
 		{
 			Name:         "Write object must be included",
 			Server:       mockserver.Dummy(),
@@ -78,8 +78,8 @@ func TestAdsWrite(t *testing.T) { // nolint:funlen,gocognit,cyclop,maintidx
 		t.Run(tt.Name, func(t *testing.T) {
 			t.Parallel()
 
-			tt.Run(t, func() (connectors.WriteConnector, error) {
-				return constructTestAdsConnector(tt.Server.URL)
+			tt.Run(t, func() (testconn.TestableWriter, error) {
+				return constructTestAdsConnector(tt.Server)
 			})
 		})
 	}
@@ -88,7 +88,7 @@ func TestAdsWrite(t *testing.T) { // nolint:funlen,gocognit,cyclop,maintidx
 func TestPlatformWrite(t *testing.T) { // nolint:funlen,gocognit,cyclop,maintidx
 	t.Parallel()
 
-	tests := []testroutines.Write{
+	tests := []testconn.TestCaseWrite{
 		{
 			Name:         "Write object must be included",
 			Server:       mockserver.Dummy(),
@@ -149,25 +149,28 @@ func TestPlatformWrite(t *testing.T) { // nolint:funlen,gocognit,cyclop,maintidx
 		t.Run(tt.Name, func(t *testing.T) {
 			t.Parallel()
 
-			tt.Run(t, func() (connectors.WriteConnector, error) {
-				return constructTestPlatformConnector(tt.Server.URL)
+			tt.Run(t, func() (testconn.TestableWriter, error) {
+				return constructTestPlatformConnector(tt.Server)
 			})
 		})
 	}
 }
 
-func constructTestPlatformConnector(serverURL string) (*Connector, error) {
-	return constructTestConnector(serverURL, providers.ModuleLinkedInPlatform, nil)
+func constructTestPlatformConnector(server *httptest.Server) (*Connector, error) {
+	return constructTestConnector(server, providers.ModuleLinkedInPlatform, nil)
 }
 
-func constructTestAdsConnector(serverURL string) (*Connector, error) {
-	return constructTestConnector(serverURL, providers.ModuleLinkedInAds, map[string]string{"adAccountId": "514674276"})
+func constructTestAdsConnector(server *httptest.Server) (*Connector, error) {
+	return constructTestConnector(server, providers.ModuleLinkedInAds, map[string]string{"adAccountId": "514674276"})
 }
 
-func constructTestConnector(serverURL string, moduleID common.ModuleID, metadata map[string]string) (*Connector, error) { //nolint:lll
+func constructTestConnector(server *httptest.Server,
+	moduleID common.ModuleID,
+	metadata map[string]string,
+) (*Connector, error) {
 	connector, err := NewConnector(common.ConnectorParams{
 		Module:              moduleID,
-		AuthenticatedClient: http.DefaultClient,
+		AuthenticatedClient: server.Client(),
 		Metadata:            metadata,
 	})
 	if err != nil {
@@ -175,7 +178,7 @@ func constructTestConnector(serverURL string, moduleID common.ModuleID, metadata
 	}
 
 	// for testing we want to redirect calls to our mock server
-	connector.setUnitTestBaseURL(mockutils.ReplaceURLOrigin(connector.ModuleInfo().BaseURL, serverURL))
+	connector.setUnitTestBaseURL(mockutils.ReplaceURLOrigin(connector.ModuleInfo().BaseURL, server.URL))
 
 	return connector, nil
 }

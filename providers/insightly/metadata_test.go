@@ -4,13 +4,11 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/amp-labs/connectors"
 	"github.com/amp-labs/connectors/common"
-	"github.com/amp-labs/connectors/internal/goutils"
 	"github.com/amp-labs/connectors/test/utils/mockutils"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockcond"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockserver"
-	"github.com/amp-labs/connectors/test/utils/testroutines"
+	"github.com/amp-labs/connectors/test/utils/testconn"
 	"github.com/amp-labs/connectors/test/utils/testutils"
 )
 
@@ -21,7 +19,7 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 	responseFruitObject := testutils.DataFromFile(t, "read/custom-objects/fruit.json")
 	responseFruitFields := testutils.DataFromFile(t, "read/fruits-custom-object/custom-fields.json")
 
-	tests := []testroutines.Metadata{
+	tests := []testconn.TestCaseListObjectMetadata{
 		{
 			Name:         "At least one object name must be queried",
 			Input:        nil,
@@ -32,7 +30,7 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 			Name:       "Unknown object requested",
 			Input:      []string{"butterflies"},
 			Server:     mockserver.Dummy(),
-			Comparator: testroutines.ComparatorSubsetMetadata,
+			Comparator: testconn.ComparatorSubsetMetadata,
 			Expected: &common.ListObjectMetadataResult{
 				Errors: map[string]error{
 					"butterflies": common.ErrObjectNotSupported,
@@ -47,7 +45,7 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 				If:    mockcond.Path("/v3.1/CustomFields/Teams"),
 				Then:  mockserver.ResponseString(http.StatusOK, `[]`),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetMetadata,
+			Comparator: testconn.ComparatorSubsetMetadata,
 			Expected: &common.ListObjectMetadataResult{
 				Result: map[string]common.ObjectMetadata{
 					"Teams": {
@@ -82,7 +80,7 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 				If:    mockcond.Path("/v3.1/CustomFields/Contacts"),
 				Then:  mockserver.Response(http.StatusOK, responseContacts),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetMetadata,
+			Comparator: testconn.ComparatorSubsetMetadata,
 			Expected: &common.ListObjectMetadataResult{
 				Result: map[string]common.ObjectMetadata{
 					"Contacts": {
@@ -99,13 +97,13 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 								DisplayName:  "Hobby",
 								ValueType:    "string",
 								ProviderType: "TEXT",
-								ReadOnly:     goutils.Pointer(false),
+								ReadOnly:     new(false),
 							},
 							"Interests__c": {
 								DisplayName:  "Interests",
 								ValueType:    "multiSelect",
 								ProviderType: "MULTISELECT",
-								ReadOnly:     goutils.Pointer(false),
+								ReadOnly:     new(false),
 								Values: common.FieldValues{{
 									Value:        "3",
 									DisplayValue: "Art",
@@ -130,13 +128,13 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 								DisplayName:  "Newsletter Subscription",
 								ValueType:    "other",
 								ProviderType: "BIT",
-								ReadOnly:     goutils.Pointer(false),
+								ReadOnly:     new(false),
 							},
 							"Preferred_Contact_Method__c": {
 								DisplayName:  "Preferred Contact Method",
 								ValueType:    "singleSelect",
 								ProviderType: "DROPDOWN",
-								ReadOnly:     goutils.Pointer(false),
+								ReadOnly:     new(false),
 								Values: common.FieldValues{{
 									Value:        "1",
 									DisplayValue: "Email",
@@ -155,37 +153,37 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 								DisplayName:  "Date1",
 								ValueType:    "date",
 								ProviderType: "DATE",
-								ReadOnly:     goutils.Pointer(false),
+								ReadOnly:     new(false),
 							},
 							"Date2__c": {
 								DisplayName:  "Date2",
 								ValueType:    "datetime",
 								ProviderType: "DATETIME",
-								ReadOnly:     goutils.Pointer(false),
+								ReadOnly:     new(false),
 							},
 							"MultiText1__c": {
 								DisplayName:  "MultiText1",
 								ValueType:    "string",
 								ProviderType: "MULTILINETEXT",
-								ReadOnly:     goutils.Pointer(false),
+								ReadOnly:     new(false),
 							},
 							"Number1__c": {
 								DisplayName:  "Number1",
 								ValueType:    "float",
 								ProviderType: "NUMERIC",
-								ReadOnly:     goutils.Pointer(false),
+								ReadOnly:     new(false),
 							},
 							"Percent1__c": {
 								DisplayName:  "Percent1",
 								ValueType:    "float",
 								ProviderType: "PERCENT",
-								ReadOnly:     goutils.Pointer(false),
+								ReadOnly:     new(false),
 							},
 							"AutoNumber1__c": {
 								DisplayName:  "AutoNumber1",
 								ValueType:    "other",
 								ProviderType: "AUTONUMBER",
-								ReadOnly:     goutils.Pointer(true),
+								ReadOnly:     new(true),
 							},
 						},
 					},
@@ -206,7 +204,7 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 					Then: mockserver.Response(http.StatusOK, responseFruitFields),
 				}},
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetMetadata,
+			Comparator: testconn.ComparatorSubsetMetadata,
 			Expected: &common.ListObjectMetadataResult{
 				Result: map[string]common.ObjectMetadata{
 					"Fruit__c": {
@@ -228,13 +226,13 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 								DisplayName:  "Weight",
 								ValueType:    common.ValueTypeFloat,
 								ProviderType: "NUMERIC",
-								ReadOnly:     goutils.Pointer(false),
+								ReadOnly:     new(false),
 							},
 							"Color__c": {
 								DisplayName:  "Color",
 								ValueType:    common.ValueTypeString,
 								ProviderType: "TEXT",
-								ReadOnly:     goutils.Pointer(false),
+								ReadOnly:     new(false),
 							},
 						},
 					},
@@ -249,7 +247,7 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop,mai
 		t.Run(tt.Name, func(t *testing.T) {
 			t.Parallel()
 
-			tt.Run(t, func() (connectors.ObjectMetadataConnector, error) {
+			tt.Run(t, func() (testconn.TestableMetadataReader, error) {
 				return constructTestConnector(tt.Server.URL)
 			})
 		})

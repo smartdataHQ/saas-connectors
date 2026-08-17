@@ -4,13 +4,11 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/amp-labs/connectors"
 	"github.com/amp-labs/connectors/common"
-	"github.com/amp-labs/connectors/internal/goutils"
 	"github.com/amp-labs/connectors/test/utils/mockutils"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockcond"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockserver"
-	"github.com/amp-labs/connectors/test/utils/testroutines"
+	"github.com/amp-labs/connectors/test/utils/testconn"
 	"github.com/amp-labs/connectors/test/utils/testutils"
 )
 
@@ -19,7 +17,7 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop
 
 	schemaResponse := testutils.DataFromFile(t, "schema.json")
 
-	tests := []testroutines.Metadata{
+	tests := []testconn.TestCaseListObjectMetadata{
 		{
 			Name:         "At least one object name must be provided",
 			Input:        nil,
@@ -36,7 +34,7 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop
 					Then: mockserver.Response(http.StatusOK, schemaResponse),
 				}},
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetMetadata,
+			Comparator: testconn.ComparatorSubsetMetadata,
 			Expected: &common.ListObjectMetadataResult{
 				Result: map[string]common.ObjectMetadata{
 					"opportunities": {
@@ -56,7 +54,7 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop
 								DisplayName:  "createdAt",
 								ValueType:    common.ValueTypeDateTime,
 								ProviderType: "string",
-								ReadOnly:     goutils.Pointer(true),
+								ReadOnly:     new(true),
 							},
 							"description": {
 								DisplayName:  "description",
@@ -107,7 +105,7 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop
 								DisplayName:  "touchedAt",
 								ValueType:    common.ValueTypeDateTime,
 								ProviderType: "string",
-								ReadOnly:     goutils.Pointer(true),
+								ReadOnly:     new(true),
 							},
 							"trashedAt": {
 								DisplayName:  "trashedAt",
@@ -118,7 +116,7 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop
 								DisplayName:  "updatedAt",
 								ValueType:    common.ValueTypeDateTime,
 								ProviderType: "string",
-								ReadOnly:     goutils.Pointer(true),
+								ReadOnly:     new(true),
 							},
 						},
 						FieldsMap: map[string]string{
@@ -146,7 +144,7 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop
 		t.Run(tt.Name, func(t *testing.T) {
 			t.Parallel()
 
-			tt.Run(t, func() (connectors.ObjectMetadataConnector, error) {
+			tt.Run(t, func() (testconn.TestableMetadataReader, error) {
 				return constructTestConnector(tt.Server.URL)
 			})
 		})

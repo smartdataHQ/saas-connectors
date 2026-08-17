@@ -7,7 +7,6 @@ import (
 
 	"github.com/amp-labs/connectors/common"
 	"github.com/amp-labs/connectors/common/urlbuilder"
-	"github.com/amp-labs/connectors/internal/goutils"
 	"github.com/amp-labs/connectors/internal/jsonquery"
 )
 
@@ -39,19 +38,6 @@ type Data struct {
 			AllowedObjectIDs []string `json:"allowed_object_ids"` //nolint:tagliatelle
 		} `json:"record_reference"`
 	} `json:"config"`
-}
-
-type objectResponse struct {
-	Data struct {
-		Id struct {
-			WorkspaceId string `json:"workspace_id"` //nolint:tagliatelle
-			ObjectId    string `json:"object_id"`    //nolint:tagliatelle
-		} `json:"id"`
-		ApiSlug      string    `json:"api_slug"`      //nolint:tagliatelle
-		SingularNoun string    `json:"singular_noun"` //nolint:tagliatelle
-		PluralNoun   string    `json:"plural_noun"`   //nolint:tagliatelle
-		CreatedAt    time.Time `json:"created_at"`    //nolint:tagliatelle
-	} `json:"data"`
 }
 
 // ListObjectMetadata creates metadata of object via reading objects using Attio API.
@@ -198,7 +184,8 @@ func (c *Connector) parseStandardOrCustomMetadata(
 			DisplayName:  apiSlug,
 			ValueType:    getFieldValueType(value.Type, value.IsMultiselect),
 			ProviderType: value.Type,
-			ReadOnly:     goutils.Pointer(!value.IsWritable),
+			ReadOnly:     new(!value.IsWritable),
+			FieldId:      new(value.ID.AttributeID),
 			Values:       defaultValues,
 		}
 	}

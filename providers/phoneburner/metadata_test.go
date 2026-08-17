@@ -1,24 +1,30 @@
 package phoneburner
 
 import (
+	"net/http"
 	"testing"
 
-	"github.com/amp-labs/connectors"
 	"github.com/amp-labs/connectors/common"
 	"github.com/amp-labs/connectors/test/utils/mockutils"
+	"github.com/amp-labs/connectors/test/utils/mockutils/mockcond"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockserver"
-	"github.com/amp-labs/connectors/test/utils/testroutines"
+	"github.com/amp-labs/connectors/test/utils/testconn"
+	"github.com/amp-labs/connectors/test/utils/testutils"
 )
 
 func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop
 	t.Parallel()
 
-	tests := []testroutines.Metadata{
+	responseCustomfieldsDefinitions := testutils.DataFromFile(t, "read/customfields-definitions.json")
+
+	isCustomField := true
+
+	tests := []testconn.TestCaseListObjectMetadata{
 		{
 			Name:       "Successful metadata for contacts, folders, members, voicemails, and dialsession",
 			Input:      []string{"contacts", "folders", "members", "voicemails", "dialsession", "tags"},
 			Server:     mockserver.Dummy(),
-			Comparator: testroutines.ComparatorSubsetMetadata,
+			Comparator: testconn.ComparatorSubsetMetadata,
 			Expected: &common.ListObjectMetadataResult{
 				Result: map[string]common.ObjectMetadata{
 					"contacts": {
@@ -117,6 +123,42 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop
 			ExpectedErrs: nil,
 		},
 		{
+			Name:  "Contacts metadata merges member custom field definitions from GET /rest/1/customfields",
+			Input: []string{"contacts"},
+			Server: mockserver.Conditional{
+				Setup: mockserver.ContentJSON(),
+				If: mockcond.And{
+					mockcond.Path("/rest/1/customfields"),
+					mockcond.QueryParam("page_size", "100"),
+					mockcond.QueryParam("page", "1"),
+				},
+				Then: mockserver.Response(http.StatusOK, responseCustomfieldsDefinitions),
+			}.Server(),
+			Comparator: testconn.ComparatorSubsetMetadata,
+			Expected: &common.ListObjectMetadataResult{
+				Result: map[string]common.ObjectMetadata{
+					"contacts": {
+						DisplayName: "Contacts",
+						Fields: map[string]common.FieldMetadata{
+							"contact_user_id": {
+								DisplayName:  "Contact User Id",
+								ValueType:    "string",
+								ProviderType: "string",
+							},
+							customFieldMetadataKey(leadScoreDisplayName): {
+								DisplayName:  leadScoreDisplayName,
+								ValueType:    "float",
+								ProviderType: "Numeric",
+								IsCustom:     &isCustomField,
+							},
+						},
+					},
+				},
+				Errors: map[string]error{},
+			},
+			ExpectedErrs: nil,
+		},
+		{
 			Name:         "Empty objects returns missing objects error",
 			Input:        nil,
 			Server:       mockserver.Dummy(),
@@ -127,7 +169,7 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop
 			Name:       "Unsupported object returns object not supported error",
 			Input:      []string{"contacts", "unknown_object"},
 			Server:     mockserver.Dummy(),
-			Comparator: testroutines.ComparatorSubsetMetadata,
+			Comparator: testconn.ComparatorSubsetMetadata,
 			Expected: &common.ListObjectMetadataResult{
 				Result: map[string]common.ObjectMetadata{
 					"contacts": {
@@ -154,7 +196,7 @@ func TestListObjectMetadata(t *testing.T) { // nolint:funlen,gocognit,cyclop
 		t.Run(tt.Name, func(t *testing.T) {
 			t.Parallel()
 
-			tt.Run(t, func() (connectors.ObjectMetadataConnector, error) {
+			tt.Run(t, func() (testconn.TestableMetadataReader, error) {
 				return constructTestConnector(tt.Server.URL)
 			})
 		})

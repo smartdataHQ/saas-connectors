@@ -4,17 +4,16 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/amp-labs/connectors"
 	"github.com/amp-labs/connectors/common"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockcond"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockserver"
-	"github.com/amp-labs/connectors/test/utils/testroutines"
+	"github.com/amp-labs/connectors/test/utils/testconn"
 )
 
 func TestDelete(t *testing.T) { //nolint:funlen
 	t.Parallel()
 
-	tests := []testroutines.Delete{
+	tests := []testconn.TestCaseDelete{
 		{
 			Name:         "Delete object must be included",
 			Server:       mockserver.Dummy(),
@@ -115,7 +114,7 @@ func TestDelete(t *testing.T) { //nolint:funlen
 	for _, tt := range tests {
 		t.Run(tt.Name, func(t *testing.T) {
 			t.Parallel()
-			tt.Run(t, func() (connectors.DeleteConnector, error) {
+			tt.Run(t, func() (testconn.TestableDeleter, error) {
 				return constructTestReadConnector(tt.Server.URL, "proj_123")
 			})
 		})

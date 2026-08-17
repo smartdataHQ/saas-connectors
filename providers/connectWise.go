@@ -26,16 +26,23 @@ func init() {
 				Delete: false,
 			},
 			Proxy:     true,
-			Read:      false,
-			Subscribe: false,
-			Write:     false,
+			Read:      true,
+			Subscribe: true,
+			Write:     true,
+		},
+		SubscribeRequirements: &SubscribeRequirements{
+			SubscribeByAPI: new(true),
 		},
 		Metadata: &ProviderMetadata{
 			Input: []MetadataItemInput{{
 				Name:         "region",
 				DisplayName:  "Region",
 				DefaultValue: "na",
-				DocsURL:      "", // TODO link to real docs
+				Prompt:       "The subdomain of your ConnectWise site (for example, 'na' for 'https://na.myconnectwise.net')",
+			}, {
+				Name:        "clientId",
+				DisplayName: "Client ID",
+				DocsURL:     "https://developer.connectwise.com/ClientID",
 			}},
 		},
 	})

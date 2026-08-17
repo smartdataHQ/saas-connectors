@@ -29,11 +29,22 @@ type Connector struct {
 	components.Reader
 	components.Writer
 
-	// realmID is the Company ID in QuickBooks.
+	// Workspace is the Company ID (realmId) in QuickBooks.
 	// http://developer.intuit.com/app/developer/qbo/docs/develop/authentication-and-authorization/oauth-2.0
-	realmId string
+	Workspace string
 	// graphQLBaseURL is a variable on the struct so it can be mocked in unit tests.
 	graphQLBaseURL string
+}
+
+// resolveWorkspace returns the QuickBooks workspace ref (realmId), preferring
+// params.Workspace and falling back to params.Metadata["realmId"] for legacy
+// connections that stored the realmId in metadata.
+func resolveWorkspace(params common.ConnectorParams) string {
+	if params.Workspace != "" {
+		return params.Workspace
+	}
+
+	return params.Metadata["realmId"]
 }
 
 func NewConnector(params common.ConnectorParams) (*Connector, error) {
@@ -42,7 +53,18 @@ func NewConnector(params common.ConnectorParams) (*Connector, error) {
 		return nil, err
 	}
 
-	conn.realmId = params.Metadata["realmId"]
+	conn.Workspace = resolveWorkspace(params)
+
+	return conn, nil
+}
+
+func NewSandboxConnector(params common.ConnectorParams) (*Connector, error) {
+	conn, err := components.Initialize(providers.QuickbooksSandbox, params, constructor)
+	if err != nil {
+		return nil, err
+	}
+
+	conn.Workspace = resolveWorkspace(params)
 
 	return conn, nil
 }

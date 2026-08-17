@@ -2,6 +2,7 @@
 package common
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -73,6 +74,10 @@ var (
 	// ErrBadRequest is returned when we get a 400 response from the provider.
 	ErrBadRequest error = newClassedErr("bad request", ErrorClassBadRequest)
 
+	// ErrFieldNotFound is returned when a requested field was not found or is not
+	// accessible on the object. It is a subset of ErrBadRequest.
+	ErrFieldNotFound = errors.New("field not found or not accessible")
+
 	// ErrConflict is returned when we get a 409 response from the provider.
 	ErrConflict = errors.New("conflict")
 
@@ -81,6 +86,11 @@ var (
 
 	// ErrCursorGone is returned when a cursor used for pagination is no longer valid.
 	ErrCursorGone error = newClassedErr("pagination cursor gone or expired", ErrorClassCursorGone)
+
+	// ErrInvalidPaginationCursor is returned when the provider rejected a pagination cursor
+	// as malformed/unparseable (e.g. HubSpot returning "Cannot deserialize value of type `int`
+	// from String ...").
+	ErrInvalidPaginationCursor error = errors.New("pagination cursor has an invalid format")
 
 	// ErrResultsLimitExceeded is returned when a search query exceeds the provider's
 	// maximum result limit (e.g., HubSpot's 10,000 record search limit).
@@ -142,6 +152,28 @@ var (
 	// This can be used when the provider returns a 200 OK status,
 	// but the body of the response indicates an error or is missing expected fields.
 	ErrBadProviderResponse = errors.New("bad response from provider")
+
+	// ErrProxyNotApplicable indicates that a proxy cannot be used in the given context.
+	ErrProxyNotApplicable = errors.New("proxy is not applicable in this context")
+
+	// ErrMissingField indicates that a required field is missing from a response body.
+	// This error is returned during response body inspection when attempting to extract
+	// important fields that are expected to be present but were not found.
+	ErrMissingField = errors.New("missing field")
+
+	// ErrSubscriptionEventList is returned by CollapsedSubscriptionEvent.SubscriptionEventList.
+	ErrSubscriptionEventList = errors.New("failed creating []common.SubscriptionEvent")
+
+	// ErrMissingHeader indicates that a required header is missing in HTTP response.
+	ErrMissingHeader = errors.New("missing header")
+
+	// ErrPrevSubscriptionResultInvalid is returned when the update subscription expects different shape of data
+	// from previous SubscriptionResult. This should not happen and it points to issues with implementation.
+	// Likely the result was not created properly by previous Create/Update step.
+	ErrPrevSubscriptionResultInvalid = errors.New("previous SubscriptionResult does not match expectations")
+
+	// ErrInvalidVirtualField is returned when Write cannot happen due to invalid virtual field.
+	ErrInvalidVirtualField = errors.New("virtual field is invalid")
 )
 
 // ReadParams defines how we are reading data from a SaaS API.
@@ -205,6 +237,18 @@ type ReadParams struct {
 
 	// PageSize specifies the # of records to request when making a read request.
 	PageSize int // optional
+
+	// Additional options for the read operation that the connector may support.
+	// This optional map is used for bespoke connector-specific parameters.
+	Opts ReadParamsOpts // optional
+}
+
+// Each connector that supports ReadParams.Opts should define its own type and assert it.
+// e.g. gong.ReadParamOpts.
+type ReadParamsOpts any
+
+func (p ReadParams) IsFirstPage() bool {
+	return p.NextPage.String() == ""
 }
 
 type WriteHeader struct {
@@ -254,6 +298,15 @@ func (p WriteParams) IsUpdate() bool {
 	return p.RecordId != ""
 }
 
+func (p WriteParams) GetRecordReader() (*bytes.Reader, error) {
+	jsonData, err := json.Marshal(p.RecordData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal record data: %w", err)
+	}
+
+	return bytes.NewReader(jsonData), nil
+}
+
 // RecordDataToMap converts WriteParams.RecordData into a map[string]any.
 //
 // When possible use WriteParams.GetRecord instead.
@@ -276,6 +329,27 @@ func RecordDataToMap(recordData any) (map[string]any, error) {
 	}
 
 	return object, nil
+}
+
+// RecordDataToStruct converts params.RecordData (any) into the concrete generic type S.
+//
+// The conversion is performed by JSON round-trip: the function marshals
+// params.RecordData to JSON and then unmarshals that JSON into the result value of type S.
+//
+// Returns the zero value of S and a non-nil error if marshaling or unmarshaling fails.
+func RecordDataToStruct[S any](params WriteParams) (payload S, err error) {
+	var data []byte
+
+	data, err = json.Marshal(params.RecordData)
+	if err != nil {
+		return payload, err
+	}
+
+	if err = json.Unmarshal(data, &payload); err != nil {
+		return payload, err
+	}
+
+	return payload, nil
 }
 
 // DeleteParams defines how we are deleting data in SaaS API.
@@ -329,14 +403,14 @@ type ReadResultRow struct {
 
 // Association is a struct that represents an association between two objects.
 // If you think of an association as a directed edge between two nodes, then
-// the ObjectID is the target node, and the AssociationType is the type of edge.
-// The source node is represented by ReadResultRow.
+// the ObjectID is the target node. The source node is represented by ReadResultRow.
 type Association struct {
 	// ObjectID is the ID of the associated object.
-	ObjectId string `json:"objectId"`
-	// AssociationType is the type of association.
-	AssociationType string         `json:"associationType,omitempty"`
-	Raw             map[string]any `json:"raw,omitempty"`
+	ObjectId string         `json:"objectId"`
+	Raw      map[string]any `json:"raw,omitempty"`
+	// ProviderAssociationMetadata holds provider-specific metadata about the association type.
+	// For HubSpot, this includes category, typeId, and label from the associations API.
+	ProviderAssociationMetadata map[string]any `json:"providerAssociationMetadata,omitempty"`
 }
 
 // WriteResult represents the outcome of a single record write operation.
@@ -690,6 +764,10 @@ type FieldMetadata struct {
 	// True means the field must have a value, false means it is optional.
 	IsRequired *bool
 
+	// FieldId is the provider's unique identifier for this field.
+	// It is nil when the provider does not expose field identifiers.
+	FieldId *string //nolint:revive
+
 	// Values is a list of possible values for this field.
 	// It is applicable only if the type is either singleSelect or multiSelect, otherwise slice is nil.
 	Values []FieldValue
@@ -737,17 +815,34 @@ type SubscriptionEventPreLoadData struct {
 	RequestHeaders *http.Header
 }
 
+// Event represents a raw webhook payload and serves as the common abstraction across all event types in the system.
+// Implementations are expected to provide access to the underlying payload in a normalized map form.
+//
+// The following higher-level event interfaces build on top of Event
+// and should be considered during implementation:
+//   - SubscriptionEvent: core interface for all subscription-related events
+//   - SubscriptionUpdateEvent: specialization for update/change events
+//   - CollapsedSubscriptionEvent: for payloads containing multiple events
+//
+// A concrete provider event type may implement one or more of these
+// interfaces depending on the structure of the incoming webhook payload.
+type Event interface {
+	RawMap() (map[string]any, error)
+}
+
 // SubscriptionEvent is an interface for webhook events coming from the provider.
 // This interface defines methods to extract information from the webhook event.
 type SubscriptionEvent interface {
+	Event
+
 	EventType() (SubscriptionEventType, error)
 	RawEventName() (string, error)
 	ObjectName() (string, error)
 	Workspace() (string, error)
 	RecordId() (string, error)
 	EventTimeStampNano() (int64, error)
-	RawMap() (map[string]any, error)
-	// PreLoadData is used to pre-load data into the subscription event.
+
+	// PreLoadData is used to preload data into the subscription event.
 	// Assume that the data will include the entire request body in case it is needed for the event processing.
 	// This method will be called for every event as the first step in the event processing.
 	PreLoadData(data *SubscriptionEventPreLoadData) error
@@ -755,16 +850,35 @@ type SubscriptionEvent interface {
 
 type SubscriptionUpdateEvent interface {
 	SubscriptionEvent
-	// GetUpdatedFields returns the fields that were updated in the event.
+
+	// UpdatedFields returns the fields that were updated in the event.
 	UpdatedFields() ([]string, error)
+}
+
+// SubscriptionEventWithRecord is an optional interface implemented by providers
+// whose webhook payload already carries the full provider record inline (e.g.
+// ConnectWise ships it as the "Entity" field). When implemented, the record can
+// be field-mapped downstream without a separate GetRecordsByIds fetch.
+type SubscriptionEventWithRecord interface {
+	SubscriptionEvent
+
+	// Record returns the single record carried inline in the webhook payload as a
+	// ReadResultRow, marshaled the same way a read returns it: Raw holds the full
+	// provider record and Fields holds the requested subset (lowercased), selected
+	// from the given fields. This lets callers map the inline record exactly like a
+	// fetched read, without a GetRecordsByIds call.
+	Record(fields []string) (ReadResultRow, error)
 }
 
 // CollapsedSubscriptionEvent some providers send multiple events in a single webhook payload.
 // This interface is used to extract individual events to SubscriptionEvent type
 // from a collapsed event for webhook parsing and processing.
 type CollapsedSubscriptionEvent interface {
+	Event
+
+	// SubscriptionEventList collapses the event response into the list of messages.
+	// In case of an error returns ErrSubscriptionEventList.
 	SubscriptionEventList() ([]SubscriptionEvent, error)
-	RawMap() (map[string]any, error)
 }
 
 // WebhookRequest is a struct that contains the request parameters for a webhook.
@@ -816,7 +930,7 @@ type SubscriptionRegistrationParams struct {
 type ObjectEvents struct {
 	// ["create", "update", "delete"] our regular CRUD operation events
 	// we translate to provider-specific names contact.creation
-	Events []SubscriptionEventType
+	Events SubscriptionEventTypes
 	// ["email", "fax"] fields to watch for an update subscription
 	WatchFields []string
 	// true if all fields should be watched for an update subscription
@@ -825,6 +939,44 @@ type ObjectEvents struct {
 	// any non CRUD operations with provider specific event names
 	// eg)  ["contact.merged"] for hubspot or ["jira_issue:restored", "jira_issue:archived"] for jira.
 	PassThroughEvents []string
+}
+
+// SubscriptionEventTypes is a list of subscription event types representing the operations to subscribe to.
+type SubscriptionEventTypes []SubscriptionEventType
+
+// Equals checks if two SubscriptionEventTypes lists contain the same event types.
+// The comparison is order-independent.
+func (t SubscriptionEventTypes) Equals(otherTypes SubscriptionEventTypes) bool {
+	if len(t) != len(otherTypes) {
+		return false
+	}
+
+	first := datautils.NewSetFromList(t)
+	second := datautils.NewSetFromList(otherTypes)
+
+	return first.Equals(second)
+}
+
+// Equals checks if two ObjectEvents configurations are identical.
+// All fields must match: WatchFieldsAll, Events, WatchFields, and PassThroughEvents.
+func (o ObjectEvents) Equals(other ObjectEvents) bool {
+	if o.WatchFieldsAll != other.WatchFieldsAll {
+		return false
+	}
+
+	if !o.Events.Equals(other.Events) {
+		return false
+	}
+
+	if !datautils.NewSetFromList(o.WatchFields).Equals(datautils.NewSetFromList(other.WatchFields)) {
+		return false
+	}
+
+	if !datautils.NewSetFromList(o.PassThroughEvents).Equals(datautils.NewSetFromList(other.PassThroughEvents)) {
+		return false
+	}
+
+	return true
 }
 
 type ObjectName string
@@ -883,6 +1035,20 @@ type SubscriptionResult struct { // this corresponds to each API call.
 	// provider specific events ["contact.merged"] for hubspot or ["jira_issue:restored", "jira_issue:archived"] for jira.
 }
 
+// NewEmptyObjectEvents creates the subscription state where each object is not subscribed to any events.
+func NewEmptyObjectEvents(names []ObjectName) map[ObjectName]ObjectEvents {
+	events := make(map[ObjectName]ObjectEvents)
+	for _, objectName := range names {
+		events[objectName] = ObjectEvents{}
+	}
+
+	return events
+}
+
+func (r SubscriptionResult) ObjectNames() []ObjectName {
+	return datautils.FromMap(r.ObjectEvents).Keys()
+}
+
 type SubscriptionStatus string
 
 const (
@@ -895,6 +1061,62 @@ const (
 	// SubscriptionStatusFailedToRollback registration returned error, and failed to rollback some intermittent steps.
 	SubscriptionStatusFailedToRollback SubscriptionStatus = "failed_to_rollback"
 )
+
+// Resolve combines multiple subscription statuses and returns the most severe status.
+// The priority order (from worst to best) is:
+//  1. failed_to_rollback (worst - error occurred AND cleanup failed)
+//  2. failed (error occurred but cleanup succeeded)
+//  3. pending (registration in progress)
+//  4. success (best - registration completed successfully)
+//
+// If any status in the input is failed_to_rollback, the result is failed_to_rollback.
+// If any status is failed (and no failed_to_rollback), the result is failed.
+// If all statuses are pending, the result is pending.
+// Only if all statuses are success, the result is success.
+//
+// Parameters:
+//   - others: One or more additional subscription statuses to merge with the current status
+//
+// Returns:
+//   - The most severe status among all inputs
+//
+// Example:
+//
+//	status := SubscriptionStatusSuccess
+//	status.Merge(SubscriptionStatusSuccess, SubscriptionStatusFailed) // returns SubscriptionStatusFailed
+func (s SubscriptionStatus) Resolve(others ...SubscriptionStatus) SubscriptionStatus {
+	if len(others) == 0 {
+		return s
+	}
+
+	// Define priority: lower number = higher priority (more severe)
+	priority := map[SubscriptionStatus]int{
+		SubscriptionStatusFailedToRollback: 1,
+		SubscriptionStatusFailed:           2, // nolint:mnd
+		SubscriptionStatusPending:          3, // nolint:mnd
+		SubscriptionStatusSuccess:          4, // nolint:mnd
+	}
+
+	// Start with the current status's priority
+	minPriority := priority[s]
+
+	// Find the most severe status (lowest priority number)
+	for _, other := range others {
+		if otherPriority := priority[other]; otherPriority < minPriority {
+			minPriority = otherPriority
+		}
+	}
+
+	// Return the status with the lowest priority number
+	for status, prio := range priority {
+		if prio == minPriority {
+			return status
+		}
+	}
+
+	// Fallback (should never reach here if all statuses are valid)
+	return s
+}
 
 type SearchFilter struct {
 	// multiple filters are joined by `and` by default.

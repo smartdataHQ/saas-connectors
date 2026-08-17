@@ -4,19 +4,18 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/amp-labs/connectors"
 	"github.com/amp-labs/connectors/common"
 	"github.com/amp-labs/connectors/test/utils/mockutils"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockcond"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockserver"
-	"github.com/amp-labs/connectors/test/utils/testroutines"
+	"github.com/amp-labs/connectors/test/utils/testconn"
 	"github.com/amp-labs/connectors/test/utils/testutils"
 )
 
 func TestListObjectMetadata(t *testing.T) {
 	t.Parallel()
 
-	tests := []testroutines.Metadata{
+	tests := []testconn.TestCaseListObjectMetadata{
 		{
 			Name:  "Successfully fetch metadata for Product object",
 			Input: []string{"products"},
@@ -25,7 +24,7 @@ func TestListObjectMetadata(t *testing.T) {
 				If:    mockcond.Path("/admin/api/2025-10/graphql.json"),
 				Then:  mockserver.Response(http.StatusOK, testutils.DataFromFile(t, "metadata/product.json")),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetMetadata,
+			Comparator: testconn.ComparatorSubsetMetadata,
 			Expected: &common.ListObjectMetadataResult{
 				Result: map[string]common.ObjectMetadata{
 					"products": {
@@ -56,7 +55,7 @@ func TestListObjectMetadata(t *testing.T) {
 				If:    mockcond.Path("/admin/api/2025-10/graphql.json"),
 				Then:  mockserver.Response(http.StatusOK, testutils.DataFromFile(t, "metadata/order.json")),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetMetadata,
+			Comparator: testconn.ComparatorSubsetMetadata,
 			Expected: &common.ListObjectMetadataResult{
 				Result: map[string]common.ObjectMetadata{
 					"orders": {
@@ -92,7 +91,7 @@ func TestListObjectMetadata(t *testing.T) {
 				If:    mockcond.Path("/admin/api/2025-10/graphql.json"),
 				Then:  mockserver.Response(http.StatusOK, testutils.DataFromFile(t, "metadata/customer.json")),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetMetadata,
+			Comparator: testconn.ComparatorSubsetMetadata,
 			Expected: &common.ListObjectMetadataResult{
 				Result: map[string]common.ObjectMetadata{
 					"customers": {
@@ -132,7 +131,7 @@ func TestListObjectMetadata(t *testing.T) {
 		t.Run(tt.Name, func(t *testing.T) {
 			t.Parallel()
 
-			tt.Run(t, func() (connectors.ObjectMetadataConnector, error) {
+			tt.Run(t, func() (testconn.TestableMetadataReader, error) {
 				return constructTestConnector(tt.Server.URL)
 			})
 		})

@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/amp-labs/connectors/common"
+	"github.com/amp-labs/connectors/common/logging"
 	"github.com/amp-labs/connectors/internal/simultaneously"
 	"github.com/amp-labs/connectors/providers/salesforce/internal/crm/metadata"
 )
@@ -18,15 +20,34 @@ import (
 // because the metadata package is internal.
 type ApexTriggerParams = metadata.ApexTriggerParams
 
-// ApexTrigger represents a deployed apex trigger in the SubscribeResult.
+// TestLevel mirrors metadata.TestLevel for callers outside the internal package.
+type TestLevel = metadata.TestLevel
+
+// Re-exported testLevel constants matching Salesforce Metadata API DeployOptions.testLevel.
+const (
+	TestLevelNoTestRun         = metadata.TestLevelNoTestRun
+	TestLevelRunSpecifiedTests = metadata.TestLevelRunSpecifiedTests
+	TestLevelRunLocalTests     = metadata.TestLevelRunLocalTests
+	TestLevelRunAllTestsInOrg  = metadata.TestLevelRunAllTestsInOrg
+)
+
+// apexDeployTestLevel is the testLevel used for Apex trigger deploys (CDC/filtered
+// read) and their rollbacks. RunSpecifiedTests keeps the deploy hermetic: only the
+// bundled Test_<TriggerName> class runs, so a flaky pre-existing test in the
+// customer org cannot fail our deploy. Salesforce permits this level for production
+// deploys provided each deployed Apex class is covered to >=75% by the specified
+// tests, which the generated companion class satisfies for the trigger and for
+// itself (per the Metadata API DeployOptions docs).
+const apexDeployTestLevel = metadata.TestLevelRunSpecifiedTests
+
+// ApexTrigger represents a deployed apex trigger that exists in Salesforce.
+// Only successfully deployed triggers are recorded here; deploy failures are
+// surfaced through the error returned from Subscribe / UpdateSubscription.
 type ApexTrigger struct {
 	ObjectName     common.ObjectName
 	TriggerName    string
 	IndicatorField common.FieldDefinition
 	WatchFields    []string
-	// Errors contains deployment error messages for this trigger.
-	// Empty when deployment succeeded.
-	Errors []string
 
 	// Deprecated: CheckboxField is kept for backwards compatibility with
 	// previously serialized SubscribeResults. New code should use IndicatorField.
@@ -60,9 +81,28 @@ type ApexTriggerResult struct {
 // DeployResult contains the outcome of a Salesforce Metadata API deployment.
 type DeployResult = metadata.DeployResult
 
+// CancelDeployResult is an alias, see internal package for implementation.
+type CancelDeployResult = metadata.CancelDeployResult
+
 const (
-	deployPollInterval = 10 * time.Second
-	deployPollTimeout  = 5 * time.Minute
+	// deployPollTimeout bounds how long pollDeployStatus waits for a single deploy.
+	// Metadata deploys serialize per org, so on a busy org a deploy can sit queued
+	// (status Pending) far longer than the deploy itself takes to execute. The
+	// window is deliberately SHORT: a timeout is not a failure — Subscribe proceeds
+	// without waiting (see deployTriggersToleratingTimeouts), the deploy keeps
+	// running org-side and lands on its own. Keeping the wait short bounds the
+	// activity's wall-clock, which minimizes exposure to Temporal worker churn
+	// (rollouts/autoscaling) cancelling the attempt mid-poll.
+	deployPollTimeout = 15 * time.Minute
+
+	// Deploy status checks back off in steps: quick checks while a fast deploy
+	// might still finish, then progressively sparser ones for the long-haul wait
+	// (see deployPollInterval).
+	deployPollIntervalFast = 10 * time.Second
+	deployPollIntervalSlow = 1 * time.Minute
+	deployPollIntervalIdle = 5 * time.Minute
+	deployPollFastWindow   = 1 * time.Minute
+	deployPollSlowWindow   = 10 * time.Minute
 
 	// apexDeployMaxAttempts is the maximum number of attempts for deploying an apex trigger.
 	// Retries handle the race condition where a custom field was just created via Metadata API
@@ -77,6 +117,18 @@ func GenerateApexTriggerNameForCDC(objectName string) (string, error) {
 	return metadata.GenerateApexTriggerNameForCDC(objectName)
 }
 
+// ApexTriggerExists reports whether an apex trigger with the given Name exists
+// in Salesforce. Implementation queries the Tooling API ApexTrigger sobject by
+// Name (the same field metadata.GenerateApexTriggerNameForCDC produces).
+func (c *Connector) ApexTriggerExists(ctx context.Context, triggerName string) (bool, error) {
+	soql := fmt.Sprintf(
+		"SELECT Id FROM ApexTrigger WHERE Name = '%s'",
+		escapeSOQLString(triggerName),
+	)
+
+	return c.toolingEntityExists(ctx, soql)
+}
+
 // GenerateApexTriggerNameForRead returns the APEX trigger name for filtered read on a given Salesforce object.
 func GenerateApexTriggerNameForRead(objectName string) (string, error) {
 	return metadata.GenerateApexTriggerNameForRead(objectName)
@@ -85,41 +137,41 @@ func GenerateApexTriggerNameForRead(objectName string) (string, error) {
 // ConstructApexTriggerZipForCDC builds a zipped deployment package for an APEX trigger that sets
 // a boolean checkbox field to true/false when any of the specified watch fields change.
 // The returned zip bytes are ready for DeployMetadataZip.
-func ConstructApexTriggerZipForCDC(params metadata.ApexTriggerParams, checkboxFieldName string) ([]byte, error) {
+func ConstructApexTriggerZipForCDC(
+	ctx context.Context, params metadata.ApexTriggerParams, checkboxFieldName string,
+) ([]byte, error) {
 	if err := metadata.ValidateApexTriggerParams(params, checkboxFieldName); err != nil {
 		return nil, err
 	}
 
-	triggerCode := metadata.GenerateTriggerCodeForCDC(params, checkboxFieldName)
-
-	return metadata.ConstructApexTrigger(params, triggerCode)
+	return metadata.ConstructApexTrigger(ctx, params)
 }
 
 // ConstructApexTriggerZipForFilteredRead builds a zipped deployment package for an APEX trigger
 // that sets a datetime field to System.now() when any of the specified watch fields change.
 // The returned zip bytes are ready for DeployMetadataZip.
 func ConstructApexTriggerZipForFilteredRead(
-	params metadata.ApexTriggerParams, timestampFieldName string,
+	ctx context.Context, params metadata.ApexTriggerParams, timestampFieldName string,
 ) ([]byte, error) {
 	if err := metadata.ValidateApexTriggerParams(params, timestampFieldName); err != nil {
 		return nil, err
 	}
 
-	triggerCode := metadata.GenerateTriggerCodeForFilteredRead(params, timestampFieldName)
-
-	return metadata.ConstructApexTrigger(params, triggerCode)
+	return metadata.ConstructApexTrigger(ctx, params)
 }
 
-// buildApexTriggerZips constructs zip deployment packages from pre-generated trigger code.
-// The triggerCodeMap keys must match the triggerParams keys.
+// buildApexTriggerZips constructs zip deployment packages for each object's apex
+// trigger. The trigger + handler class + companion test class are all generated
+// internally by metadata.ConstructApexTrigger from the per-object params; the
+// variant (CDC vs filtered-read) is selected from params.IndicatorField.ValueType.
 func buildApexTriggerZips(
+	ctx context.Context,
 	triggerParams map[common.ObjectName]*metadata.ApexTriggerParams,
-	triggerCodeMap map[common.ObjectName]string,
 ) (map[common.ObjectName][]byte, error) {
 	zipDataMap := make(map[common.ObjectName][]byte, len(triggerParams))
 
 	for objName, params := range triggerParams {
-		zipData, err := metadata.ConstructApexTrigger(*params, triggerCodeMap[objName])
+		zipData, err := metadata.ConstructApexTrigger(ctx, *params)
 		if err != nil {
 			return nil, fmt.Errorf("failed to construct apex trigger zip for %s: %w", objName, err)
 		}
@@ -155,12 +207,7 @@ func (c *Connector) deployApexTriggersForCDC(
 		}, nil
 	}
 
-	triggerCodeMap := make(map[common.ObjectName]string, len(triggerParams))
-	for objName, p := range triggerParams {
-		triggerCodeMap[objName] = metadata.GenerateTriggerCodeForCDC(*p, p.IndicatorField.FieldName)
-	}
-
-	zipDataMap, err := buildApexTriggerZips(triggerParams, triggerCodeMap)
+	zipDataMap, err := buildApexTriggerZips(ctx, triggerParams)
 	if err != nil {
 		return nil, err
 	}
@@ -168,12 +215,100 @@ func (c *Connector) deployApexTriggersForCDC(
 	return c.deployApexTriggers(ctx, triggerParams, zipDataMap)
 }
 
+// verifyApexTriggersForCDC takes the verify-only path used when
+// SubscriptionRequest.ManualApexTriggerManagement is true. It builds the same
+// apex trigger params as deployApexTriggersForCDC (so trigger names match what
+// the deploy path would have generated), best-effort checks each trigger is
+// visible in Salesforce, and returns the corresponding ApexTrigger entries
+// for storage in SubscribeResult.ApexTriggers.
+//
+// Visibility — not strict existence — is what we can observe: the Tooling API
+// SOQL against ApexTrigger may return zero rows because the trigger genuinely
+// doesn't exist OR because the connector's user lacks visibility/permission.
+// Either way we surface a warn and continue; the caller opted into manual
+// trigger lifecycle. The runtime tell that the trigger truly is missing is a
+// soft one — UPDATE events will silently fail the channel-member filter
+// because the indicator field never flips to true — so this branch records a
+// warning per missing trigger rather than failing Subscribe upfront.
+func (c *Connector) verifyApexTriggersForCDC(
+	ctx context.Context,
+	params common.SubscribeParams,
+	req *SubscriptionRequest,
+) (map[common.ObjectName]*ApexTrigger, error) {
+	triggerParams, err := buildApexTriggerParamsForSubscribe(params, req)
+	if err != nil {
+		return nil, err
+	}
+
+	triggers := make(map[common.ObjectName]*ApexTrigger, len(triggerParams))
+
+	for objName, tParams := range triggerParams {
+		warnIfApexTriggerMissing(ctx, c, tParams.TriggerName, objName)
+
+		// Always emit the trigger entry so sfRes.ApexTriggers describes what
+		// the caller intended; a missing trigger is a runtime concern (silent
+		// drop of UPDATE events), not a setup-time failure.
+		triggers[objName] = &ApexTrigger{
+			ObjectName:     objName,
+			TriggerName:    tParams.TriggerName,
+			IndicatorField: tParams.IndicatorField,
+			WatchFields:    tParams.WatchFields,
+		}
+	}
+
+	return triggers, nil
+}
+
+// warnIfApexTriggerMissing logs a per-trigger warning when the existence check
+// either errors (e.g. permission/visibility) or returns false. Shared by the
+// Subscribe and UpdateSubscription manual-mode paths.
+func warnIfApexTriggerMissing(
+	ctx context.Context, c *Connector, triggerName string, objName common.ObjectName,
+) {
+	exists, err := c.ApexTriggerExists(ctx, triggerName)
+	if err != nil {
+		slog.WarnContext(ctx,
+			"manual apex trigger existence check errored; assuming caller-managed and continuing",
+			"object", objName,
+			"trigger", triggerName,
+			"error", err,
+		)
+
+		return
+	}
+
+	if !exists {
+		slog.WarnContext(ctx,
+			"manual apex trigger not visible to connector; if it really is missing, "+
+				"UPDATE CDC events will be silently dropped at runtime because the "+
+				"indicator field will never flip to true",
+			"object", objName,
+			"trigger", triggerName,
+		)
+	}
+}
+
 // DeployMetadataZip initiates a deploy of a zip package to the connected Salesforce org
-// via the Metadata API. Returns the async deployment ID for status polling.
-// Use CheckDeployStatus to poll for completion.
+// via the Metadata API with testLevel=NoTestRun. Returns the async deployment ID for
+// status polling. Use CheckDeployStatus to poll for completion.
 func (c *Connector) DeployMetadataZip(ctx context.Context, zipData []byte) (string, error) {
 	if c.crmAdapter != nil {
 		return c.crmAdapter.DeployMetadataZip(ctx, zipData)
+	}
+
+	return "", common.ErrNotImplemented
+}
+
+// DeployMetadataZipWithTests initiates a deploy of a zip package using the supplied
+// Salesforce Metadata API testLevel. When testLevel is RunSpecifiedTests, runTests
+// must list at least one Apex test class to execute. Production deploys must use
+// RunSpecifiedTests, RunLocalTests, or RunAllTestsInOrg per the Salesforce Metadata
+// API DeployOptions documentation.
+func (c *Connector) DeployMetadataZipWithTests(
+	ctx context.Context, zipData []byte, testLevel metadata.TestLevel, runTests []string,
+) (string, error) {
+	if c.crmAdapter != nil {
+		return c.crmAdapter.DeployMetadataZipWithTests(ctx, zipData, testLevel, runTests)
 	}
 
 	return "", common.ErrNotImplemented
@@ -184,6 +319,19 @@ func (c *Connector) DeployMetadataZip(ctx context.Context, zipData []byte) (stri
 func (c *Connector) CheckDeployStatus(ctx context.Context, deployID string) (*DeployResult, error) {
 	if c.crmAdapter != nil {
 		return c.crmAdapter.CheckDeployStatus(ctx, deployID)
+	}
+
+	return nil, common.ErrNotImplemented
+}
+
+// CancelDeploy requests cancellation of a queued (Pending) or InProgress deployment
+// via the Metadata API cancelDeploy operation. Cancellation is asynchronous: when the
+// returned result's Done is false, poll CheckDeployStatus until the deploy reports
+// Done (final status "Canceled"). A deploy that has already finished cannot be
+// canceled; Salesforce returns a SOAP fault, surfaced as an error.
+func (c *Connector) CancelDeploy(ctx context.Context, deployID string) (*CancelDeployResult, error) {
+	if c.crmAdapter != nil {
+		return c.crmAdapter.CancelDeploy(ctx, deployID)
 	}
 
 	return nil, common.ErrNotImplemented
@@ -289,8 +437,15 @@ func (c *Connector) deployApexTrigger(
 ) (*ApexTriggerResult, error) {
 	var lastDeployResult *DeployResult
 
+	testClassName, err := metadata.GenerateApexTestClassName(params.TriggerName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to derive test class name for %s: %w", params.ObjectName, err)
+	}
+
+	runTests := []string{testClassName}
+
 	for attempt := range apexDeployMaxAttempts {
-		deployID, err := c.DeployMetadataZip(ctx, zipData)
+		deployID, err := c.DeployMetadataZipWithTests(ctx, zipData, apexDeployTestLevel, runTests)
 		if err != nil {
 			return nil, fmt.Errorf("failed to deploy apex trigger for %s: %w", params.ObjectName, err)
 		}
@@ -347,33 +502,110 @@ func isVariableNotExistError(result *DeployResult) bool {
 	return false
 }
 
-// rollbackApexTrigger deploys a destructive changes package to remove an apex trigger.
+// rollbackApexTrigger deploys a destructive changes package that removes both the
+// apex trigger and its companion Test_<TriggerName> class so the org is left clean.
+//
+// Because the test class is being deleted in the same deploy, RunSpecifiedTests
+// against that class would fail (Salesforce processes destructiveChanges before
+// running tests). The rollback therefore uses RunLocalTests, which Salesforce also
+// permits in production and which doesn't require any runTests entry.
+//
+// Fallback: RunLocalTests runs the org's local Apex tests as part of the deploy,
+// and Salesforce rolls the whole deploy back if that test run fails — including
+// when the org's overall coverage dips below 75% or an unrelated pre-existing test
+// fails. Neither is caused by our pure deletion. When the destructive components
+// themselves reported no failure (len(ComponentFailures) == 0) but the deploy was
+// rolled back by the test run, we retry once with NoTestRun so the deletion can
+// proceed. A genuine component-level problem (which appears in ComponentFailures)
+// is NOT retried. NoTestRun is rejected by Salesforce for production orgs, so the
+// fallback only helps sandbox/dev orgs — exactly where the coverage rollback bites.
 func (c *Connector) rollbackApexTrigger(ctx context.Context, triggerName string) error {
 	zipData, err := ConstructDestructiveApexTriggerZip(triggerName)
 	if err != nil {
 		return fmt.Errorf("failed to construct destructive apex trigger zip for %s: %w", triggerName, err)
 	}
 
-	deployID, err := c.DeployMetadataZip(ctx, zipData)
+	deployResult, err := c.deployDestructiveApex(ctx, zipData, metadata.TestLevelRunLocalTests)
 	if err != nil {
 		return fmt.Errorf("failed to deploy destructive apex trigger for %s: %w", triggerName, err)
 	}
 
-	deployResult, err := c.pollDeployStatus(ctx, deployID)
+	if deployResult.Success {
+		return nil
+	}
+
+	// A component failure means the destructive change itself was rejected — do not
+	// paper over it by skipping tests.
+	if len(deployResult.ComponentFailures) > 0 {
+		return fmt.Errorf("%w for trigger %s: %s",
+			errDestructiveDeployFailed, triggerName, formatDeployFailureDetails(deployResult))
+	}
+
+	// No component failures: the deploy was rolled back by the test run (coverage
+	// or an unrelated failing test), not by our deletion. Retry without tests.
+	slog.WarnContext(ctx, "destructive apex deploy rolled back by test run; retrying with NoTestRun",
+		"trigger", triggerName, "firstAttempt", formatDeployFailureDetails(deployResult))
+
+	deployResult, err = c.deployDestructiveApex(ctx, zipData, metadata.TestLevelNoTestRun)
 	if err != nil {
-		return fmt.Errorf("failed to poll deploy status for destructive apex trigger %s: %w", triggerName, err)
+		return fmt.Errorf("failed to deploy destructive apex trigger for %s (NoTestRun fallback): %w",
+			triggerName, err)
 	}
 
 	if !deployResult.Success {
-		return fmt.Errorf("%w for trigger %s: %s",
+		return fmt.Errorf("%w for trigger %s (NoTestRun fallback): %s",
 			errDestructiveDeployFailed, triggerName, formatDeployFailureDetails(deployResult))
 	}
 
 	return nil
 }
 
+// deployDestructiveApex deploys the given destructive-changes zip at the supplied
+// test level and polls to completion, returning the final deploy result.
+func (c *Connector) deployDestructiveApex(
+	ctx context.Context, zipData []byte, testLevel metadata.TestLevel,
+) (*DeployResult, error) {
+	deployID, err := c.DeployMetadataZipWithTests(ctx, zipData, testLevel, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	deployResult, err := c.pollDeployStatus(ctx, deployID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to poll deploy status for deployId %s: %w", deployID, err)
+	}
+
+	return deployResult, nil
+}
+
+// deployPollInterval returns the pause before the next deploy status check,
+// stepped by how long the deploy has already been polled: 10s checks during the
+// first minute (a fast deploy finishes almost immediately), 1m checks until ten
+// minutes have passed, then 5m checks for the long-haul wait behind a busy
+// org's deploy queue.
+func deployPollInterval(elapsed time.Duration) time.Duration {
+	switch {
+	case elapsed < deployPollFastWindow:
+		return deployPollIntervalFast
+	case elapsed < deployPollSlowWindow:
+		return deployPollIntervalSlow
+	default:
+		return deployPollIntervalIdle
+	}
+}
+
 func (c *Connector) pollDeployStatus(ctx context.Context, deployID string) (*DeployResult, error) {
 	timeout := time.After(deployPollTimeout)
+	start := time.Now()
+
+	// logging.Logger (rather than raw slog) inherits the caller's structured
+	// fields set via logging.With — e.g. amp-labs/server enriches the subscribe
+	// context with installation/subscription/project ids, so every poll line
+	// below carries them.
+	logging.Logger(ctx).InfoContext(ctx, "polling metadata deploy status",
+		"deployId", deployID,
+		"timeout", deployPollTimeout.String(),
+	)
 
 	for {
 		deployResult, err := c.CheckDeployStatus(ctx, deployID)
@@ -381,18 +613,57 @@ func (c *Connector) pollDeployStatus(ctx context.Context, deployID string) (*Dep
 			return nil, fmt.Errorf("failed to check deploy status: %w", err)
 		}
 
+		elapsed := time.Since(start).Round(time.Second)
+
 		if deployResult.Done {
+			logging.Logger(ctx).InfoContext(ctx, "metadata deploy finished",
+				"deployId", deployID,
+				"status", deployResult.Status,
+				"success", deployResult.Success,
+				"elapsed", elapsed.String(),
+			)
+			logApexCoverage(ctx, deployID, deployResult)
+
 			return deployResult, nil
 		}
+
+		logging.Logger(ctx).InfoContext(ctx, "still polling metadata deploy",
+			"deployId", deployID,
+			"status", deployResult.Status,
+			"elapsed", elapsed.String(),
+		)
 
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		case <-timeout:
-			return nil, fmt.Errorf("%w after %s for deployId %s", errDeployPollTimeout, deployPollTimeout, deployID)
-		case <-time.After(deployPollInterval):
+			return nil, fmt.Errorf("%w after %s for deployId %s", ErrDeployPollTimeout, deployPollTimeout, deployID)
+		case <-time.After(deployPollInterval(time.Since(start))):
 			// continue polling
 		}
+	}
+}
+
+// logApexCoverage emits one info-level log entry per Apex artifact (class or
+// trigger) reporting the coverage Salesforce observed during the test run.
+// Salesforce's 75% production gate is org-tier dependent — sandbox/dev orgs
+// don't enforce it — so a successful deploy is NOT proof that coverage
+// cleared 75%. Logging the actual numbers makes the gate verifiable
+// independently of the deploy outcome.
+func logApexCoverage(ctx context.Context, deployID string, result *DeployResult) {
+	if result == nil || len(result.CodeCoverage) == 0 {
+		return
+	}
+
+	for _, cov := range result.CodeCoverage {
+		slog.InfoContext(ctx, "apex coverage",
+			"deployID", deployID,
+			"type", cov.Type,
+			"name", cov.Name,
+			"covered", cov.NumLocations-cov.NumLocationsNotCovered,
+			"total", cov.NumLocations,
+			"percent", cov.Percent(),
+		)
 	}
 }
 
@@ -412,60 +683,148 @@ func filterSuccessfulTriggers(
 	return successful
 }
 
-// toApexTriggers converts deploy results to the ApexTrigger type stored in SubscribeResult,
-// including per-object error details for failed deployments.
+// onlyDeployPollTimeouts reports whether out carries at least one per-object
+// deploy error and every one of them is a poll timeout — i.e. no deploy
+// actually failed; they are all still queued/running org-side and expected to
+// land on their own.
+func onlyDeployPollTimeouts(out *DeployApexTriggersResult) bool {
+	if out == nil || len(out.Errors) == 0 {
+		return false
+	}
+
+	for _, err := range out.Errors {
+		if !errors.Is(err, ErrDeployPollTimeout) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// timedOutTriggerObjects lists the object names whose trigger deploy hit the
+// poll timeout, for logging.
+func timedOutTriggerObjects(out *DeployApexTriggersResult) []string {
+	objects := make([]string, 0, len(out.Errors))
+
+	for objName, err := range out.Errors {
+		if errors.Is(err, ErrDeployPollTimeout) {
+			objects = append(objects, string(objName))
+		}
+	}
+
+	sort.Strings(objects)
+
+	return objects
+}
+
+// toApexTriggers converts deploy results to the ApexTrigger type stored in
+// SubscribeResult. Successfully deployed triggers (non-empty DeployID) are
+// emitted, and so are triggers whose deploy merely outlived the poll window
+// (ErrDeployPollTimeout) — those are still running org-side and expected to
+// land, so recording the intended entry keeps later lifecycle operations
+// (update/unsubscribe) tracking them, mirroring the manual-verify path which
+// records intent. Genuinely failed deploys are omitted so the map never
+// describes a trigger that will not exist. Per-object deploy errors are
+// aggregated into out.Errors and surfaced through the error chain returned
+// from Subscribe / UpdateSubscription; they are also logged here per object so
+// that, even if the caller swallows the aggregate error, a failed-deploy entry
+// has a corresponding warn log keyed to the object name.
 func toApexTriggers(
 	out *DeployApexTriggersResult,
 ) map[common.ObjectName]*ApexTrigger {
 	triggers := make(map[common.ObjectName]*ApexTrigger, len(out.Results))
 
 	for objName, result := range out.Results {
-		trigger := &ApexTrigger{
+		if result.DeployID == "" && !errors.Is(out.Errors[objName], ErrDeployPollTimeout) {
+			slog.Warn("apex trigger deploy failed; entry omitted from sfRes.ApexTriggers",
+				"object", objName,
+				"error", out.Errors[objName],
+			)
+
+			continue
+		}
+
+		triggers[objName] = &ApexTrigger{
 			ObjectName:     objName,
 			TriggerName:    result.TriggerName,
 			IndicatorField: result.IndicatorField,
 			WatchFields:    result.WatchFields,
 		}
-
-		if err, ok := out.Errors[objName]; ok {
-			trigger.Errors = []string{err.Error()}
-		}
-
-		triggers[objName] = trigger
 	}
 
 	return triggers
 }
 
-// redeployKeptApexTriggers deletes old apex triggers for kept objects and redeploys
-// them with updated watch fields from keptObjectEvents.
-func (c *Connector) redeployKeptApexTriggers(
+// redeployExistingApexTriggers updates apex triggers for existing objects in place via
+// Metadata API deploy, which is an upsert keyed by the trigger's fullName. No
+// destructive prelude is needed for objects that still have a quota field — the
+// new deploy atomically replaces the existing trigger and its companion test
+// class in a single transaction. Triggers whose object no longer has a quota
+// field configured (orphaned) are destructively deleted.
+//
+// Operates only on existing objects: anything in diff.objectsToAdd is excluded
+// because the inner Subscribe call in executeUpdateSubscription will deploy
+// triggers for new objects. Without this exclusion, each new-object trigger
+// would deploy twice (once here, once in inner Subscribe), doubling the
+// metadata-deploy time per added object.
+//
+//nolint:cyclop,funlen
+func (c *Connector) redeployExistingApexTriggers(
 	ctx context.Context,
 	req *SubscriptionRequest,
 	diff subscriptionDiff,
 ) error {
-	for objName, trigger := range diff.apexTriggersToKeep {
-		if err := c.rollbackApexTrigger(ctx, trigger.TriggerName); err != nil {
-			return fmt.Errorf("failed to delete old apex trigger for object %s: %w", objName, err)
-		}
+	existingParams := common.SubscribeParams{SubscriptionEvents: diff.allObjectEvents}
 
-		delete(diff.apexTriggersToKeep, objName)
-	}
-
-	// Build trigger params from the kept objects' events (saved before diff mutation).
-	keptParams := common.SubscribeParams{SubscriptionEvents: diff.keptObjectEvents}
-
-	triggerParams, err := buildApexTriggerParamsForSubscribe(keptParams, req)
+	triggerParams, err := buildApexTriggerParamsForSubscribe(existingParams, req)
 	if err != nil {
 		return err
 	}
 
-	triggerCodeMap := make(map[common.ObjectName]string, len(triggerParams))
-	for objName, p := range triggerParams {
-		triggerCodeMap[objName] = metadata.GenerateTriggerCodeForCDC(*p, p.IndicatorField.FieldName)
+	// Filter out objects-to-add from triggerParams. diff.allObjectEvents
+	// contains all subscription events (kept and new), so triggerParams as
+	// returned by buildApexTriggerParamsForSubscribe includes new objects too.
+	// Inner Subscribe handles new-object trigger deployment; this function
+	// must restrict itself to existing objects only.
+	for _, addObj := range diff.objectsToAdd {
+		delete(triggerParams, addObj)
 	}
 
-	zipDataMap, err := buildApexTriggerZips(triggerParams, triggerCodeMap)
+	// In manual mode the caller manages trigger lifecycle: we don't redeploy
+	// kept triggers and we don't destructively delete orphans. Best-effort
+	// warn per missing trigger (visibility-or-existence — same warn-and-continue
+	// contract as Subscribe's manual path) and move on.
+	if req != nil && req.ManualApexTriggerManagement {
+		c.warnIfExistingApexTriggersMissing(ctx, triggerParams, diff)
+
+		return nil
+	}
+
+	// Destructively remove triggers for objects that previously had a quota
+	// field but no longer do. Objects still in triggerParams are left alone —
+	// the deploy below will upsert them in place.
+	for objName, trigger := range diff.apexTriggersExisting {
+		if _, willRedeploy := triggerParams[objName]; willRedeploy {
+			continue
+		}
+
+		if trigger == nil {
+			slog.Warn("orphan apex trigger entry is nil, skipping delete",
+				"object", objName,
+			)
+
+			continue
+		}
+
+		// TODO: check existence before delete
+		if err := c.rollbackApexTrigger(ctx, trigger.TriggerName); err != nil {
+			return fmt.Errorf("failed to delete orphaned apex trigger for object %s: %w", objName, err)
+		}
+
+		delete(diff.apexTriggersExisting, objName)
+	}
+
+	zipDataMap, err := buildApexTriggerZips(ctx, triggerParams)
 	if err != nil {
 		return err
 	}
@@ -476,7 +835,7 @@ func (c *Connector) redeployKeptApexTriggers(
 			return fmt.Errorf("failed to redeploy apex trigger for object %s: %w", objName, err)
 		}
 
-		diff.apexTriggersToKeep[objName] = &ApexTrigger{
+		diff.apexTriggersExisting[objName] = &ApexTrigger{
 			ObjectName:     objName,
 			TriggerName:    result.TriggerName,
 			IndicatorField: result.IndicatorField,
@@ -485,6 +844,31 @@ func (c *Connector) redeployKeptApexTriggers(
 	}
 
 	return nil
+}
+
+// warnIfExistingApexTriggersMissing is the manual-mode counterpart to
+// redeployExistingApexTriggers's deploy/orphan-delete loop. It best-effort
+// warns per kept-object trigger that is not visible to the connector and
+// refreshes diff.apexTriggersExisting with the declared entries (mirroring
+// the bookkeeping the deploy path performs) so the merged result describes
+// what the caller intended. Orphan triggers — present in
+// diff.apexTriggersExisting but no longer in triggerParams — are left
+// untouched because the caller owns trigger lifecycle.
+func (c *Connector) warnIfExistingApexTriggersMissing(
+	ctx context.Context,
+	triggerParams map[common.ObjectName]*metadata.ApexTriggerParams,
+	diff subscriptionDiff,
+) {
+	for objName, tParams := range triggerParams {
+		warnIfApexTriggerMissing(ctx, c, tParams.TriggerName, objName)
+
+		diff.apexTriggersExisting[objName] = &ApexTrigger{
+			ObjectName:     objName,
+			TriggerName:    tParams.TriggerName,
+			IndicatorField: tParams.IndicatorField,
+			WatchFields:    tParams.WatchFields,
+		}
+	}
 }
 
 func formatDeployFailureDetails(result *DeployResult) string {

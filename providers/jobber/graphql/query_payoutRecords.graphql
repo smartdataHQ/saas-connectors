@@ -1,0 +1,41 @@
+query PayoutRecordConnection{
+  payoutRecords(
+     first: {{.First}}
+     {{if .After}}
+     after: "{{.After}}"
+     {{end}}
+     {{if or .FromDate .ToDate}}
+     filter: {
+       updatedAt: {
+         {{if .FromDate}}
+         after: "{{.FromDate}}"
+         {{end}}
+         {{if .ToDate}}
+         before: "{{.ToDate}}"
+         {{end}}
+       }
+     }
+     {{end}}
+  ){
+    nodes{
+      arrivalDate
+      created
+      createdAt
+      currency
+      feeAmount
+      grossAmount
+      id
+      identifier
+      netAmount
+      payoutMethod
+      status
+      type
+      updatedAt
+    }
+    pageInfo{
+      endCursor
+      hasNextPage
+    }
+    totalCount
+  }
+}

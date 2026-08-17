@@ -4,12 +4,11 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/amp-labs/connectors"
 	"github.com/amp-labs/connectors/common"
 	"github.com/amp-labs/connectors/test/utils/mockutils"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockcond"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockserver"
-	"github.com/amp-labs/connectors/test/utils/testroutines"
+	"github.com/amp-labs/connectors/test/utils/testconn"
 	"github.com/amp-labs/connectors/test/utils/testutils"
 )
 
@@ -17,7 +16,7 @@ func TestListObjectMetadata(t *testing.T) {
 	t.Parallel()
 	notesResponse := testutils.DataFromFile(t, "notes.json")
 	noteResponse := testutils.DataFromFile(t, "note_not_1d3tmYTlCICgjy.json")
-	tests := []testroutines.Metadata{
+	tests := []testconn.TestCaseListObjectMetadata{
 		{
 			Name:         "At least one object name must be queried",
 			Input:        nil,
@@ -46,7 +45,7 @@ func TestListObjectMetadata(t *testing.T) {
 					},
 				},
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetMetadata,
+			Comparator: testconn.ComparatorSubsetMetadata,
 			Expected: &common.ListObjectMetadataResult{
 				Result: map[string]common.ObjectMetadata{
 					"notes": {
@@ -143,7 +142,7 @@ func TestListObjectMetadata(t *testing.T) {
 				},
 				Then: mockserver.Response(http.StatusInternalServerError),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetMetadata,
+			Comparator: testconn.ComparatorSubsetMetadata,
 			Expected: &common.ListObjectMetadataResult{
 				Errors: map[string]error{
 					"notes": mockutils.ExpectedSubsetErrors{
@@ -164,7 +163,7 @@ func TestListObjectMetadata(t *testing.T) {
 				},
 				Then: mockserver.Response(http.StatusOK, []byte("{}")),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetMetadata,
+			Comparator: testconn.ComparatorSubsetMetadata,
 			Expected: &common.ListObjectMetadataResult{
 				Errors: map[string]error{
 					"notes": mockutils.ExpectedSubsetErrors{
@@ -185,7 +184,7 @@ func TestListObjectMetadata(t *testing.T) {
 				},
 				Then: mockserver.Response(http.StatusOK, []byte(`{"notes": []}`)),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetMetadata,
+			Comparator: testconn.ComparatorSubsetMetadata,
 			Expected: &common.ListObjectMetadataResult{
 				Errors: map[string]error{
 					"notes": mockutils.ExpectedSubsetErrors{
@@ -201,7 +200,7 @@ func TestListObjectMetadata(t *testing.T) {
 		t.Run(tt.Name, func(t *testing.T) {
 			t.Parallel()
 
-			tt.Run(t, func() (connectors.ObjectMetadataConnector, error) {
+			tt.Run(t, func() (testconn.TestableMetadataReader, error) {
 				return constructTestConnector(tt.Server.URL)
 			})
 		})

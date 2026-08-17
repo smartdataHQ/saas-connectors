@@ -4,7 +4,6 @@ import (
 	"net/http"
 
 	"github.com/amp-labs/connectors/common"
-	"github.com/amp-labs/connectors/internal/goutils"
 )
 
 const Salesforce Provider = "salesforce"
@@ -33,7 +32,7 @@ func init() { // nolint:funlen
 			Url:                "https://{{.workspace}}.my.salesforce.com/services/oauth2/userinfo",
 		},
 		Oauth2Opts: &Oauth2Opts{
-			GrantType:                 AuthorizationCode,
+			GrantType:                 AuthorizationCodePKCE,
 			AuthURL:                   "https://{{.workspace}}.my.salesforce.com/services/oauth2/authorize",
 			AuthURLParams:             map[string]string{"prompt": "login"},
 			TokenURL:                  "https://{{.workspace}}.my.salesforce.com/services/oauth2/token",
@@ -53,12 +52,12 @@ func init() { // nolint:funlen
 				Support: Support{
 					BatchWrite: &BatchWriteSupport{
 						Create: BatchWriteSupportConfig{
-							DefaultRecordLimit: goutils.Pointer(100), // nolint:mnd
+							DefaultRecordLimit: new(100), // nolint:mnd
 							ObjectRecordLimits: nil,
 							Supported:          true,
 						},
 						Update: BatchWriteSupportConfig{
-							DefaultRecordLimit: goutils.Pointer(100), // nolint:mnd
+							DefaultRecordLimit: new(100), // nolint:mnd
 							ObjectRecordLimits: nil,
 							Supported:          true,
 						},
@@ -79,6 +78,20 @@ func init() { // nolint:funlen
 							Equals: true,
 						},
 					},
+				},
+				SubscribeRequirements: &SubscribeRequirements{
+					Registration: new(true),
+					// PostProcess: Salesforce cannot deliver change events to Ampersand on its own. After the
+					// subscription is created via API, a setup step must happen in a *third-party* system that the
+					// connector has no access to: Salesforce publishes Change Data Capture / Platform Events onto
+					// its own event bus, and those must be routed out to AWS EventBridge (a Salesforce
+					// "Event Relay" configured against an AWS partner event source), which Ampersand then
+					// consumes. That AWS/EventBridge wiring is the "post-process" — it lives outside the
+					// connector (server-side), so the connector's only job is to *declare* that it is required by
+					// setting this flag. Contrast with Registration above, which is an in-provider one-time setup
+					// the connector itself performs; PostProcess is external and connector-less.
+					PostProcess:    new(true),
+					SubscribeByAPI: new(true),
 				},
 			},
 			ModuleSalesforceAccountEngagement: {
@@ -177,7 +190,7 @@ func init() { // nolint:funlen
 					Prompt: "If you are using External Client Apps (instead of Connected Apps) to connect your " +
 						"Salesforce account, enter the package install URL that the UI library should show to " +
 						"your users to install your Salesforce managed package.",
-					DocsURL: "https://docs.withampersand.com/provider-guides/salesforce#6-package-the-external-client-app",
+					DocsURL: "https://docs.withampersand.com/provider-guides/salesforce#6-build-the-package-install-url",
 				},
 			},
 		},

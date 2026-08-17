@@ -2,10 +2,12 @@ package connector
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/amp-labs/connectors"
 	"github.com/amp-labs/connectors/common"
 	"github.com/amp-labs/connectors/providers"
+	"github.com/amp-labs/connectors/providers/acculynx"
 	"github.com/amp-labs/connectors/providers/acuityscheduling"
 	"github.com/amp-labs/connectors/providers/aha"
 	"github.com/amp-labs/connectors/providers/aircall"
@@ -25,6 +27,7 @@ import (
 	"github.com/amp-labs/connectors/providers/braintree"
 	"github.com/amp-labs/connectors/providers/braze"
 	"github.com/amp-labs/connectors/providers/breakcold"
+	"github.com/amp-labs/connectors/providers/breezy"
 	"github.com/amp-labs/connectors/providers/brevo"
 	"github.com/amp-labs/connectors/providers/calendly"
 	"github.com/amp-labs/connectors/providers/callrail"
@@ -38,6 +41,7 @@ import (
 	"github.com/amp-labs/connectors/providers/clickup"
 	"github.com/amp-labs/connectors/providers/closecrm"
 	"github.com/amp-labs/connectors/providers/cloudtalk"
+	"github.com/amp-labs/connectors/providers/connectwise"
 	"github.com/amp-labs/connectors/providers/constantcontact"
 	"github.com/amp-labs/connectors/providers/copper"
 	"github.com/amp-labs/connectors/providers/customerapp"
@@ -50,6 +54,7 @@ import (
 	"github.com/amp-labs/connectors/providers/dropboxsign"
 	"github.com/amp-labs/connectors/providers/dynamicsbusiness"
 	"github.com/amp-labs/connectors/providers/dynamicscrm"
+	"github.com/amp-labs/connectors/providers/fastspring"
 	"github.com/amp-labs/connectors/providers/fathom"
 	"github.com/amp-labs/connectors/providers/fireflies"
 	"github.com/amp-labs/connectors/providers/flatfile"
@@ -63,8 +68,10 @@ import (
 	"github.com/amp-labs/connectors/providers/gong"
 	"github.com/amp-labs/connectors/providers/google"
 	"github.com/amp-labs/connectors/providers/gorgias"
+	gotoconn "github.com/amp-labs/connectors/providers/goto"
 	"github.com/amp-labs/connectors/providers/granola"
 	"github.com/amp-labs/connectors/providers/groove"
+	"github.com/amp-labs/connectors/providers/gusto"
 	"github.com/amp-labs/connectors/providers/happyfox"
 	"github.com/amp-labs/connectors/providers/helpscoutmailbox"
 	"github.com/amp-labs/connectors/providers/heyreach"
@@ -88,14 +95,17 @@ import (
 	"github.com/amp-labs/connectors/providers/lever"
 	"github.com/amp-labs/connectors/providers/linear"
 	"github.com/amp-labs/connectors/providers/linkedin"
+	"github.com/amp-labs/connectors/providers/livestorm"
 	"github.com/amp-labs/connectors/providers/loxo"
 	"github.com/amp-labs/connectors/providers/marketo"
+	"github.com/amp-labs/connectors/providers/meta"
 	"github.com/amp-labs/connectors/providers/microsoft"
 	"github.com/amp-labs/connectors/providers/mixmax"
 	"github.com/amp-labs/connectors/providers/monday"
 	"github.com/amp-labs/connectors/providers/netsuite"
 	netsuitem2m "github.com/amp-labs/connectors/providers/netsuite/m2m"
 	"github.com/amp-labs/connectors/providers/nutshell"
+	"github.com/amp-labs/connectors/providers/odoo"
 	"github.com/amp-labs/connectors/providers/okta"
 	"github.com/amp-labs/connectors/providers/outplay"
 	"github.com/amp-labs/connectors/providers/outreach"
@@ -105,6 +115,7 @@ import (
 	"github.com/amp-labs/connectors/providers/pipedrive"
 	"github.com/amp-labs/connectors/providers/pipeliner"
 	"github.com/amp-labs/connectors/providers/podium"
+	"github.com/amp-labs/connectors/providers/procore"
 	"github.com/amp-labs/connectors/providers/pylon"
 	"github.com/amp-labs/connectors/providers/quickbooks"
 	"github.com/amp-labs/connectors/providers/recurly"
@@ -117,6 +128,7 @@ import (
 	"github.com/amp-labs/connectors/providers/salesloft"
 	"github.com/amp-labs/connectors/providers/seismic"
 	"github.com/amp-labs/connectors/providers/sellsy"
+	"github.com/amp-labs/connectors/providers/sendgrid"
 	"github.com/amp-labs/connectors/providers/servicenow"
 	"github.com/amp-labs/connectors/providers/shopify"
 	"github.com/amp-labs/connectors/providers/slack"
@@ -124,7 +136,10 @@ import (
 	"github.com/amp-labs/connectors/providers/snapchatads"
 	"github.com/amp-labs/connectors/providers/snowflake"
 	"github.com/amp-labs/connectors/providers/solarwinds"
+	"github.com/amp-labs/connectors/providers/square"
 	"github.com/amp-labs/connectors/providers/stripe"
+	"github.com/amp-labs/connectors/providers/supersend"
+	"github.com/amp-labs/connectors/providers/surveymonkey"
 	"github.com/amp-labs/connectors/providers/talkdesk"
 	"github.com/amp-labs/connectors/providers/teamleader"
 	"github.com/amp-labs/connectors/providers/teamwork"
@@ -134,6 +149,7 @@ import (
 	"github.com/amp-labs/connectors/providers/zendesksupport"
 	"github.com/amp-labs/connectors/providers/zoho"
 	"github.com/amp-labs/connectors/providers/zoom"
+	"github.com/amp-labs/connectors/providers/zoominfo"
 )
 
 var ErrInvalidProvider = errors.New("invalid provider")
@@ -148,135 +164,156 @@ func New(provider providers.Provider, params common.ConnectorParams) (connectors
 }
 
 var connectorConstructors = map[providers.Provider]outputConstructorFunc{ // nolint:gochecknoglobals
-	providers.AWS:                     wrapper(newAWSConnector),
-	providers.AcuityScheduling:        wrapper(newAcuitySchedulingConnector),
-	providers.Aha:                     wrapper(newAhaConnector),
-	providers.Aircall:                 wrapper(newAircallConnector),
-	providers.Amplitude:               wrapper(newAmplitudeConnector),
-	providers.Apollo:                  wrapper(newApolloConnector),
-	providers.Asana:                   wrapper(newAsanaConnector),
-	providers.Ashby:                   wrapper(newAshbyConnector),
-	providers.Atlassian:               wrapper(newAtlassianConnector),
-	providers.Attio:                   wrapper(newAttioConnector),
-	providers.Avoma:                   wrapper(newAvomaConnector),
-	providers.BigQuery:                wrapper(newBigQueryConnector),
-	providers.Bentley:                 wrapper(newBentleyConnector),
-	providers.Bitbucket:               wrapper(newBitBucketConnector),
-	providers.Blackbaud:               wrapper(newBlackbaudConnector),
-	providers.Blueshift:               wrapper(newBlueshiftConnector),
-	providers.Braintree:               wrapper(newBraintreeConnector),
-	providers.Braze:                   wrapper(newBrazeConnector),
-	providers.Breakcold:               wrapper(newBreakcoldConnector),
-	providers.Brevo:                   wrapper(newBrevoConnector),
-	providers.Calendly:                wrapper(newCalendlyConnector),
-	providers.CallRail:                wrapper(newCallRail),
-	providers.CampaignMonitor:         wrapper(newCampaignMonitorConnector),
-	providers.Capsule:                 wrapper(newCapsuleConnector),
-	providers.Chargebee:               wrapper(newChargebeeConnector),
-	providers.ChargeOver:              wrapper(newChargeOver),
-	providers.ChiliPiper:              wrapper(newChiliPiperConnector),
-	providers.Chorus:                  wrapper(newChorusConnector),
-	providers.ClariCopilot:            wrapper(newClariCopilotConnector),
-	providers.ClickUp:                 wrapper(newClickUpConnector),
-	providers.Close:                   wrapper(newCloseConnector),
-	providers.CloudTalk:               wrapper(newCloudTalkConnector),
-	providers.ConstantContact:         wrapper(newConstantContactConnector),
-	providers.Copper:                  wrapper(newCopperConnector),
-	providers.CustomerJourneysApp:     wrapper(newCustomerJourneysAppConnector),
-	providers.CyclrAccount:            wrapper(newCyclrAccountConnector),
-	providers.CyclrPartner:            wrapper(newCyclrPartnerConnector),
-	providers.DevRev:                  wrapper(newDevRevConnector),
-	providers.Dixa:                    wrapper(newDixaConnector),
-	providers.Docusign:                wrapper(newDocusignConnector),
-	providers.Drift:                   wrapper(newDriftConnector),
-	providers.DropboxSign:             wrapper(newDropboxSignConnector),
-	providers.DynamicsBusinessCentral: wrapper(newDynamicsBusinessCentral),
-	providers.DynamicsCRM:             wrapper(newDynamicsCRMConnector),
-	providers.Fathom:                  wrapper(newFathomConnector),
-	providers.Fireflies:               wrapper(newFirefliesConnector),
-	providers.Flatfile:                wrapper(newFlatfileConnector),
-	providers.FourFour:                wrapper(newFourFourConnector),
-	providers.Freshdesk:               wrapper(newFreshdeskConnector),
-	providers.Front:                   wrapper(newFrontConnector),
-	providers.G2:                      wrapper(newG2Connector),
-	providers.GetResponse:             wrapper(newGetResponseConnector),
-	providers.GitLab:                  wrapper(newGitLabConnector),
-	providers.Github:                  wrapper(newGithubConnector),
-	providers.Gong:                    wrapper(newGongConnector),
-	providers.Google:                  wrapper(newGoogleConnector),
-	providers.Gorgias:                 wrapper(newGorgiasConnector),
-	providers.Granola:                 wrapper(newGranolaConnector),
-	providers.Groove:                  wrapper(newGrooveConnector),
-	providers.HappyFox:                wrapper(newHappyFoxConnector),
-	providers.HelpScoutMailbox:        wrapper(newHelpScoutMailboxConnector),
-	providers.HeyReach:                wrapper(newHeyReachConnector),
-	providers.HousecallPro:            wrapper(newHousecallProConnector),
-	providers.HighLevelStandard:       wrapper(newHighLevelStandardConnector),
-	providers.HighLevelWhiteLabel:     wrapper(newHighLevelWhiteLabelConnector),
-	providers.Hubspot:                 wrapper(newHubspotConnector),
-	providers.Hunter:                  wrapper(newHunterConnector),
-	providers.Insightly:               wrapper(newInsightlyConnector),
-	providers.Instantly:               wrapper(newInstantlyConnector),
-	providers.InstantlyAI:             wrapper(newInstantlyAIConnector),
-	providers.Intercom:                wrapper(newIntercomConnector),
-	providers.Iterable:                wrapper(newIterableConnector),
-	providers.Jobber:                  wrapper(newJobberConnector),
-	providers.JustCall:                wrapper(newJustCallConnector),
-	providers.KaseyaVSAX:              wrapper(newKaseyaVSAXConnector),
-	providers.Keap:                    wrapper(newKeapConnector),
-	providers.Kit:                     wrapper(newKitConnector),
-	providers.Klaviyo:                 wrapper(newKlaviyoConnector),
-	providers.Lemlist:                 wrapper(newLemlistConnector),
-	providers.Lever:                   wrapper(newLeverConnector),
-	providers.Linear:                  wrapper(newLinearConnector),
-	providers.LinkedIn:                wrapper(newLinkedInConnector),
-	providers.Loxo:                    wrapper(newLoxoConnector),
-	providers.Marketo:                 wrapper(newMarketoConnector),
-	providers.Microsoft:               wrapper(newMicrosoftConnector),
-	providers.Mixmax:                  wrapper(newMixmaxConnector),
-	providers.Monday:                  wrapper(newMondayConnector),
-	providers.Netsuite:                wrapper(newNetsuiteConnector),
-	providers.NetsuiteM2M:             wrapper(newNetsuiteM2MConnector),
-	providers.Nutshell:                wrapper(newNutshellConnector),
-	providers.Okta:                    wrapper(newOktaConnector),
-	providers.Outplay:                 wrapper(newOutplayConnector),
-	providers.Outreach:                wrapper(newOutreachConnector),
-	providers.Paddle:                  wrapper(newPaddleConnector),
-	providers.PhoneBurner:             wrapper(newPhoneBurnerConnector),
-	providers.Pinterest:               wrapper(newPinterestConnector),
-	providers.Pipedrive:               wrapper(newPipedriveConnector),
-	providers.Pipeliner:               wrapper(newPipelinerConnector),
-	providers.Podium:                  wrapper(newPodiumConnector),
-	providers.Pylon:                   wrapper(newPylonConnector),
-	providers.QuickBooks:              wrapper(newQuickbooksConnector),
-	providers.Recurly:                 wrapper(newRecurlyConnector),
-	providers.RevenueCat:              wrapper(newRevenueCatConnector),
-	providers.RingCentral:             wrapper(newRingCentral),
-	providers.SageIntacct:             wrapper(newSageIntacctConnector),
-	providers.Salesfinity:             wrapper(newSalesfinityConnector),
-	providers.Salesflare:              wrapper(newSalesflareConnector),
-	providers.Salesforce:              wrapper(newSalesforceConnector),
-	providers.SalesforceJWT:           wrapper(newSalesforceJWTConnector),
-	providers.Salesloft:               wrapper(newSalesloftConnector),
-	providers.Seismic:                 wrapper(newSeismicConnector),
-	providers.Sellsy:                  wrapper(newSellsyConnector),
-	providers.ServiceNow:              wrapper(newServiceNowConnector),
-	providers.Shopify:                 wrapper(newShopifyConnector),
-	providers.Slack:                   wrapper(newSlackConnector),
-	providers.Smartlead:               wrapper(newSmartleadConnector),
-	providers.SnapchatAds:             wrapper(newSnapchatAdsConnector),
-	providers.Snowflake:               wrapper(newSnowflakeConnector),
-	providers.SolarWindsServiceDesk:   wrapper(newSolarWindsConnector),
-	providers.Stripe:                  wrapper(newStripeConnector),
-	providers.Talkdesk:                wrapper(newTalkdeskConnector),
-	providers.Teamleader:              wrapper(newTeamleaderConnector),
-	providers.Teamwork:                wrapper(newTeamworkConnector),
-	providers.Webex:                   wrapper(newWebexConnector),
-	providers.Xero:                    wrapper(newXeroConnector),
-	providers.ZendeskChat:             wrapper(newZendeskChatConnector),
-	providers.ZendeskSupport:          wrapper(newZendeskSupportConnector),
-	providers.Zoho:                    wrapper(newZohoConnector),
-	providers.Zoom:                    wrapper(newZoomConnector),
+	providers.AWS:                       wrapper(newAWSConnector),
+	providers.AccuLynx:                  wrapper(newAccuLynxConnector),
+	providers.AcuityScheduling:          wrapper(newAcuitySchedulingConnector),
+	providers.Aha:                       wrapper(newAhaConnector),
+	providers.Aircall:                   wrapper(newAircallConnector),
+	providers.Amplitude:                 wrapper(newAmplitudeConnector),
+	providers.Apollo:                    wrapper(newApolloConnector),
+	providers.Asana:                     wrapper(newAsanaConnector),
+	providers.Ashby:                     wrapper(newAshbyConnector),
+	providers.Atlassian:                 wrapper(newAtlassianConnector),
+	providers.Attio:                     wrapper(newAttioConnector),
+	providers.Avoma:                     wrapper(newAvomaConnector),
+	providers.Bentley:                   wrapper(newBentleyConnector),
+	providers.BigQuery:                  wrapper(newBigQueryConnector),
+	providers.Bitbucket:                 wrapper(newBitBucketConnector),
+	providers.Blackbaud:                 wrapper(newBlackbaudConnector),
+	providers.Blueshift:                 wrapper(newBlueshiftConnector),
+	providers.Braintree:                 wrapper(newBraintreeConnector),
+	providers.Braze:                     wrapper(newBrazeConnector),
+	providers.Breezy:                    wrapper(newBreezyConnector),
+	providers.Breakcold:                 wrapper(newBreakcoldConnector),
+	providers.Brevo:                     wrapper(newBrevoConnector),
+	providers.Calendly:                  wrapper(newCalendlyConnector),
+	providers.CallRail:                  wrapper(newCallRail),
+	providers.CampaignMonitor:           wrapper(newCampaignMonitorConnector),
+	providers.Capsule:                   wrapper(newCapsuleConnector),
+	providers.ChargeOver:                wrapper(newChargeOver),
+	providers.Chargebee:                 wrapper(newChargebeeConnector),
+	providers.ChiliPiper:                wrapper(newChiliPiperConnector),
+	providers.Chorus:                    wrapper(newChorusConnector),
+	providers.ClariCopilot:              wrapper(newClariCopilotConnector),
+	providers.ClickUp:                   wrapper(newClickUpConnector),
+	providers.Close:                     wrapper(newCloseConnector),
+	providers.CloudTalk:                 wrapper(newCloudTalkConnector),
+	providers.ConnectWise:               wrapper(newConnectWiseConnector),
+	providers.ConstantContact:           wrapper(newConstantContactConnector),
+	providers.Copper:                    wrapper(newCopperConnector),
+	providers.CustomerJourneysApp:       wrapper(newCustomerJourneysAppConnector),
+	providers.CyclrAccount:              wrapper(newCyclrAccountConnector),
+	providers.CyclrPartner:              wrapper(newCyclrPartnerConnector),
+	providers.DevRev:                    wrapper(newDevRevConnector),
+	providers.Dixa:                      wrapper(newDixaConnector),
+	providers.Docusign:                  wrapper(newDocusignConnector),
+	providers.Drift:                     wrapper(newDriftConnector),
+	providers.DropboxSign:               wrapper(newDropboxSignConnector),
+	providers.DynamicsBusinessCentral:   wrapper(newDynamicsBusinessCentral),
+	providers.DynamicsCRM:               wrapper(newDynamicsCRMConnector),
+	providers.FastSpring:                wrapper(newFastSpringConnector),
+	providers.Fathom:                    wrapper(newFathomConnector),
+	providers.Fireflies:                 wrapper(newFirefliesConnector),
+	providers.Flatfile:                  wrapper(newFlatfileConnector),
+	providers.FourFour:                  wrapper(newFourFourConnector),
+	providers.Freshdesk:                 wrapper(newFreshdeskConnector),
+	providers.Front:                     wrapper(newFrontConnector),
+	providers.G2:                        wrapper(newG2Connector),
+	providers.GetResponse:               wrapper(newGetResponseConnector),
+	providers.GitLab:                    wrapper(newGitLabConnector),
+	providers.Github:                    wrapper(newGithubConnector),
+	providers.Gong:                      wrapper(newGongConnector),
+	providers.Google:                    wrapper(newGoogleConnector),
+	providers.GoogleWorkspaceDelegation: wrapper(newGoogleWorkspaceDelegationConnector),
+	providers.Gorgias:                   wrapper(newGorgiasConnector),
+	providers.GoTo:                      wrapper(newGoToConnector),
+	providers.Granola:                   wrapper(newGranolaConnector),
+	providers.Groove:                    wrapper(newGrooveConnector),
+	providers.Gusto:                     wrapper(newGustoConnector),
+	providers.GustoDemo:                 wrapper(newGustoDemoConnector),
+	providers.HappyFox:                  wrapper(newHappyFoxConnector),
+	providers.HelpScoutMailbox:          wrapper(newHelpScoutMailboxConnector),
+	providers.HeyReach:                  wrapper(newHeyReachConnector),
+	providers.HighLevelStandard:         wrapper(newHighLevelStandardConnector),
+	providers.HighLevelWhiteLabel:       wrapper(newHighLevelWhiteLabelConnector),
+	providers.HousecallPro:              wrapper(newHousecallProConnector),
+	providers.Hubspot:                   wrapper(newHubspotConnector),
+	providers.Hunter:                    wrapper(newHunterConnector),
+	providers.Insightly:                 wrapper(newInsightlyConnector),
+	providers.Instantly:                 wrapper(newInstantlyConnector),
+	providers.InstantlyAI:               wrapper(newInstantlyAIConnector),
+	providers.Intercom:                  wrapper(newIntercomConnector),
+	providers.Iterable:                  wrapper(newIterableConnector),
+	providers.Jobber:                    wrapper(newJobberConnector),
+	providers.JustCall:                  wrapper(newJustCallConnector),
+	providers.KaseyaVSAX:                wrapper(newKaseyaVSAXConnector),
+	providers.Keap:                      wrapper(newKeapConnector),
+	providers.Kit:                       wrapper(newKitConnector),
+	providers.Klaviyo:                   wrapper(newKlaviyoConnector),
+	providers.Lemlist:                   wrapper(newLemlistConnector),
+	providers.Lever:                     wrapper(newLeverConnector),
+	providers.Linear:                    wrapper(newLinearConnector),
+	providers.LinkedIn:                  wrapper(newLinkedInConnector),
+	providers.Livestorm:                 wrapper(newLivestormConnector),
+	providers.Loxo:                      wrapper(newLoxoConnector),
+	providers.Marketo:                   wrapper(newMarketoConnector),
+	providers.Meta:                      wrapper(newMetaConnector),
+	providers.Microsoft:                 wrapper(newMicrosoftConnector),
+	providers.MicrosoftAdminConsent:     wrapper(newMicrosoftAdminConsentConnector),
+	providers.Mixmax:                    wrapper(newMixmaxConnector),
+	providers.Monday:                    wrapper(newMondayConnector),
+	providers.Netsuite:                  wrapper(newNetsuiteConnector),
+	providers.NetsuiteM2M:               wrapper(newNetsuiteM2MConnector),
+	providers.Nutshell:                  wrapper(newNutshellConnector),
+	providers.Odoo:                      wrapper(newOdooConnector),
+	providers.Okta:                      wrapper(newOktaConnector),
+	providers.Outplay:                   wrapper(newOutplayConnector),
+	providers.Outreach:                  wrapper(newOutreachConnector),
+	providers.Paddle:                    wrapper(newPaddleConnector),
+	providers.PhoneBurner:               wrapper(newPhoneBurnerConnector),
+	providers.Pinterest:                 wrapper(newPinterestConnector),
+	providers.Pipedrive:                 wrapper(newPipedriveConnector),
+	providers.Pipeliner:                 wrapper(newPipelinerConnector),
+	providers.Podium:                    wrapper(newPodiumConnector),
+	providers.Procore:                   wrapper(newProcoreConnector),
+	providers.ProcoreSandbox:            wrapper(newProcoreSandboxConnector),
+	providers.Pylon:                     wrapper(newPylonConnector),
+	providers.QuickBooks:                wrapper(newQuickbooksConnector),
+	providers.QuickbooksSandbox:         wrapper(newQuickbooksSandboxConnector),
+	providers.Recurly:                   wrapper(newRecurlyConnector),
+	providers.RevenueCat:                wrapper(newRevenueCatConnector),
+	providers.RingCentral:               wrapper(newRingCentral),
+	providers.SageIntacct:               wrapper(newSageIntacctConnector),
+	providers.Salesfinity:               wrapper(newSalesfinityConnector),
+	providers.Salesflare:                wrapper(newSalesflareConnector),
+	providers.Salesforce:                wrapper(newSalesforceConnector),
+	providers.SalesforceJWT:             wrapper(newSalesforceJWTConnector),
+	providers.Salesloft:                 wrapper(newSalesloftConnector),
+	providers.Seismic:                   wrapper(newSeismicConnector),
+	providers.Sellsy:                    wrapper(newSellsyConnector),
+	providers.SendGrid:                  wrapper(newSendGridConnector),
+	providers.ServiceNow:                wrapper(newServiceNowConnector),
+	providers.Shopify:                   wrapper(newShopifyConnector),
+	providers.Slack:                     wrapper(newSlackConnector),
+	providers.Smartlead:                 wrapper(newSmartleadConnector),
+	providers.SnapchatAds:               wrapper(newSnapchatAdsConnector),
+	providers.Snowflake:                 wrapper(newSnowflakeConnector),
+	providers.SolarWindsServiceDesk:     wrapper(newSolarWindsConnector),
+	providers.Stripe:                    wrapper(newStripeConnector),
+	providers.Square:                    wrapper(newSquareConnector),
+	providers.SquareSandbox:             wrapper(newSquareSandboxConnector),
+	providers.SuperSend:                 wrapper(newSuperSendConnector),
+	providers.SurveyMonkey:              wrapper(newSurveyMonkeyConnector),
+	providers.Talkdesk:                  wrapper(newTalkdeskConnector),
+	providers.Teamleader:                wrapper(newTeamleaderConnector),
+	providers.Teamwork:                  wrapper(newTeamworkConnector),
+	providers.Webex:                     wrapper(newWebexConnector),
+	providers.Xero:                      wrapper(newXeroConnector),
+	providers.ZendeskChat:               wrapper(newZendeskChatConnector),
+	providers.ZendeskSupport:            wrapper(newZendeskSupportConnector),
+	providers.Zoho:                      wrapper(newZohoConnector),
+	providers.Zoom:                      wrapper(newZoomConnector),
+	providers.ZoomInfo:                  wrapper(newZoomInfoConnector),
 }
 
 type outputConstructorFunc func(p common.ConnectorParams) (connectors.Connector, error)
@@ -302,7 +339,7 @@ func newSalesforceConnector(params common.ConnectorParams) (*salesforce.Connecto
 	}
 
 	if field, ok := params.Metadata["timestampColumn"]; ok && field != "" {
-		opts = append(opts, salesforce.WithTimestampColumn(field))
+		opts = append(opts, salesforce.WithTimestampColumn(field, extractAlternateTimestampUsingObjects(params.Metadata)))
 	}
 
 	return salesforce.NewConnector(opts...)
@@ -324,17 +361,46 @@ func newSalesforceJWTConnector(params common.ConnectorParams) (*salesforce.Conne
 	}
 
 	if field, ok := params.Metadata["timestampColumn"]; ok && field != "" {
-		opts = append(opts, salesforce.WithTimestampColumn(field))
+		opts = append(opts, salesforce.WithTimestampColumn(field, extractAlternateTimestampUsingObjects(params.Metadata)))
 	}
 
 	return salesforce.NewConnector(opts...)
 }
 
+// alternateTimestampMetadataSuffix is the suffix on per-object metadata keys
+// that opt that object into the alternate timestamp column. For example, a
+// metadata entry "Account_timestampColumnCreateTime" opts Account into
+// salesforce.WithTimestampColumn's overridden column for incremental reads.
+// Object names are matched case-insensitively because getTimestampColumn
+// lowercases the lookup.
+const alternateTimestampMetadataSuffix = "_timestampColumnCreateTime"
+
+// extractAlternateTimestampUsingObjects walks the connector metadata for
+// "<ObjectName>_timestampColumnCreateTime" entries and returns the set of
+// objects (keyed lowercase, matching the runtime lookup) that opt into the
+// alternate timestamp column. Returns an empty map (never nil) so callers can
+// rely on lookups without nil-checking.
+func extractAlternateTimestampUsingObjects(metadata map[string]string) map[common.ObjectName]bool {
+	objects := make(map[common.ObjectName]bool)
+
+	for key := range metadata {
+		if !strings.HasSuffix(key, alternateTimestampMetadataSuffix) {
+			continue
+		}
+
+		object := strings.TrimSuffix(key, alternateTimestampMetadataSuffix)
+		if object == "" {
+			continue
+		}
+
+		objects[common.ObjectName(strings.ToLower(object))] = true
+	}
+
+	return objects
+}
+
 func newHubspotConnector(params common.ConnectorParams) (*hubspot.Connector, error) {
-	return hubspot.NewConnector(
-		hubspot.WithAuthenticatedClient(params.AuthenticatedClient),
-		hubspot.WithModule(params.Module),
-	)
+	return hubspot.NewConnector(params)
 }
 
 func newDocusignConnector(
@@ -423,10 +489,22 @@ func newMarketoConnector(
 	)
 }
 
+func newMetaConnector(
+	params common.ConnectorParams,
+) (*meta.Connector, error) {
+	return meta.NewConnector(params)
+}
+
 func newMicrosoftConnector(
 	params common.ConnectorParams,
 ) (*microsoft.Connector, error) {
 	return microsoft.NewConnector(params)
+}
+
+func newMicrosoftAdminConsentConnector(
+	params common.ConnectorParams,
+) (*microsoft.Connector, error) {
+	return microsoft.NewConnectorForProvider(providers.MicrosoftAdminConsent, params)
 }
 
 func newInstantlyConnector(
@@ -448,9 +526,13 @@ func newApolloConnector(
 func newGongConnector(
 	params common.ConnectorParams,
 ) (*gong.Connector, error) {
-	return gong.NewConnector(
-		gong.WithAuthenticatedClient(params.AuthenticatedClient),
-	)
+	var args []gong.Option
+
+	if len(params.Workspace) > 0 {
+		args = append(args, gong.WithWorkspace(params.Workspace))
+	}
+
+	return gong.NewConnector(append(args, gong.WithAuthenticatedClient(params.AuthenticatedClient))...)
 }
 
 func newAttioConnector(
@@ -470,6 +552,7 @@ func newPipedriveConnector(
 	)
 }
 
+//nolint:cyclop
 func newZohoConnector(
 	params common.ConnectorParams,
 ) (*zoho.Connector, error) {
@@ -493,12 +576,20 @@ func newZohoConnector(
 		if found && tokenDomain != "" {
 			domains.TokenDomain = tokenDomain
 		}
+
+		mailDomain, found := params.Metadata["zoho_mail_domain"]
+		if found && mailDomain != "" {
+			domains.MailDomain = mailDomain
+		}
 	}
 
 	return zoho.NewConnector(
 		zoho.WithAuthenticatedClient(params.AuthenticatedClient),
 		zoho.WithModule(params.Module),
 		zoho.WithDomains(domains),
+		// Metadata carries connection values resolved by the platform, e.g. the
+		// zohoMailAccountId catalog variable saved by post-authentication.
+		zoho.WithMetadata(params.Metadata),
 	)
 }
 
@@ -520,6 +611,12 @@ func newCloudTalkConnector(
 	params common.ConnectorParams,
 ) (*cloudtalk.Connector, error) {
 	return cloudtalk.NewConnector(params)
+}
+
+func newConnectWiseConnector(
+	params common.ConnectorParams,
+) (*connectwise.Connector, error) {
+	return connectwise.NewConnector(params)
 }
 
 func newKlaviyoConnector(
@@ -599,9 +696,7 @@ func newAsanaConnector(
 func newStripeConnector(
 	params common.ConnectorParams,
 ) (*stripe.Connector, error) {
-	return stripe.NewConnector(
-		stripe.WithAuthenticatedClient(params.AuthenticatedClient),
-	)
+	return stripe.NewConnector(params)
 }
 
 func newZoomConnector(
@@ -664,6 +759,12 @@ func newOktaConnector(
 	params common.ConnectorParams,
 ) (*okta.Connector, error) {
 	return okta.NewConnector(params)
+}
+
+func newOdooConnector(
+	params common.ConnectorParams,
+) (*odoo.Connector, error) {
+	return odoo.NewConnector(params)
 }
 
 func newHeyReachConnector(
@@ -819,6 +920,18 @@ func newGrooveConnector(
 	return groove.NewConnector(params)
 }
 
+func newGustoConnector(
+	params common.ConnectorParams,
+) (*gusto.Connector, error) {
+	return gusto.NewConnector(params)
+}
+
+func newGustoDemoConnector(
+	params common.ConnectorParams,
+) (*gusto.Connector, error) {
+	return gusto.NewDemoConnector(params)
+}
+
 func newPinterestConnector(
 	params common.ConnectorParams,
 ) (*pinterest.Connector, error) {
@@ -843,6 +956,12 @@ func newGoogleConnector(
 	return google.NewConnector(params)
 }
 
+func newGoogleWorkspaceDelegationConnector(
+	params common.ConnectorParams,
+) (*google.Connector, error) {
+	return google.NewConnectorForProvider(providers.GoogleWorkspaceDelegation, params)
+}
+
 func newLeverConnector(
 	params common.ConnectorParams,
 ) (*lever.Connector, error) {
@@ -859,6 +978,10 @@ func newBrazeConnector(
 	params common.ConnectorParams,
 ) (*braze.Connector, error) {
 	return braze.NewConnector(params)
+}
+
+func newFastSpringConnector(params common.ConnectorParams) (*fastspring.Connector, error) {
+	return fastspring.NewConnector(params)
 }
 
 func newFathomConnector(
@@ -903,10 +1026,22 @@ func newSeismicConnector(
 	return seismic.NewConnector(params)
 }
 
+func newSendGridConnector(
+	params common.ConnectorParams,
+) (*sendgrid.Connector, error) {
+	return sendgrid.NewConnector(params)
+}
+
 func newXeroConnector(
 	params common.ConnectorParams,
 ) (*xero.Connector, error) {
 	return xero.NewConnector(params)
+}
+
+func newBreezyConnector(
+	params common.ConnectorParams,
+) (*breezy.Connector, error) {
+	return breezy.NewConnector(params)
 }
 
 func newBreakcoldConnector(
@@ -957,7 +1092,14 @@ func newLinkedInConnector(
 	return linkedin.NewConnector(params)
 }
 
-func newBitBucketConnector(params common.ConnectorParams,
+func newLivestormConnector(
+	params common.ConnectorParams,
+) (*livestorm.Connector, error) {
+	return livestorm.NewConnector(params)
+}
+
+func newBitBucketConnector(
+	params common.ConnectorParams,
 ) (*bitbucket.Connector, error) {
 	return bitbucket.NewConnector(params)
 }
@@ -968,67 +1110,80 @@ func newAmplitudeConnector(
 	return amplitude.NewConnector(params)
 }
 
-func newCalendlyConnector(params common.ConnectorParams,
+func newCalendlyConnector(
+	params common.ConnectorParams,
 ) (*calendly.Connector, error) {
 	return calendly.NewConnector(params)
 }
 
-func newPaddleConnector(params common.ConnectorParams,
+func newPaddleConnector(
+	params common.ConnectorParams,
 ) (*paddle.Connector, error) {
 	return paddle.NewConnector(params)
 }
 
-func newJobberConnector(params common.ConnectorParams,
+func newJobberConnector(
+	params common.ConnectorParams,
 ) (*jobber.Connector, error) {
 	return jobber.NewConnector(params)
 }
 
-func newJustCallConnector(params common.ConnectorParams,
+func newJustCallConnector(
+	params common.ConnectorParams,
 ) (*justcall.Connector, error) {
 	return justcall.NewConnector(params)
 }
 
-func newChorusConnector(params common.ConnectorParams,
+func newChorusConnector(
+	params common.ConnectorParams,
 ) (*chorus.Connector, error) {
 	return chorus.NewConnector(params)
 }
 
-func newWebexConnector(params common.ConnectorParams,
+func newWebexConnector(
+	params common.ConnectorParams,
 ) (*webex.Connector, error) {
 	return webex.NewConnector(params)
 }
 
-func newChargebeeConnector(params common.ConnectorParams,
+func newChargebeeConnector(
+	params common.ConnectorParams,
 ) (*chargebee.Connector, error) {
 	return chargebee.NewConnector(params)
 }
 
-func newLoxoConnector(params common.ConnectorParams,
+func newLoxoConnector(
+	params common.ConnectorParams,
 ) (*loxo.Connector, error) {
 	return loxo.NewConnector(params)
 }
 
-func newSnapchatAdsConnector(params common.ConnectorParams,
+func newSnapchatAdsConnector(
+	params common.ConnectorParams,
 ) (*snapchatads.Connector, error) {
 	return snapchatads.NewConnector(params)
 }
 
-func newOutplayConnector(params common.ConnectorParams,
+func newOutplayConnector(
+	params common.ConnectorParams,
 ) (*outplay.Connector, error) {
 	return outplay.NewConnector(params)
 }
 
-func newHappyFoxConnector(params common.ConnectorParams,
+func newHappyFoxConnector(
+	params common.ConnectorParams,
 ) (*happyfox.Connector, error) {
 	return happyfox.NewConnector(params)
 }
 
-func newSnowflakeConnector(params common.ConnectorParams,
+func newSnowflakeConnector(
+	params common.ConnectorParams,
 ) (*snowflake.Connector, error) {
 	return snowflake.NewConnector(params)
 }
 
-func newBigQueryConnector(params common.ConnectorParams,
+func newBigQueryConnector(
+	params common.ConnectorParams,
 ) (*bigquery.Connector, error) {
 	return bigquery.NewConnector(params)
 }
@@ -1057,6 +1212,10 @@ func newAcuitySchedulingConnector(
 	return acuityscheduling.NewConnector(params)
 }
 
+func newAccuLynxConnector(params common.ConnectorParams) (*acculynx.Connector, error) {
+	return acculynx.NewConnector(params)
+}
+
 func newShopifyConnector(
 	params common.ConnectorParams,
 ) (*shopify.Connector, error) {
@@ -1081,8 +1240,20 @@ func newQuickbooksConnector(params common.ConnectorParams) (*quickbooks.Connecto
 	return quickbooks.NewConnector(params)
 }
 
+func newQuickbooksSandboxConnector(params common.ConnectorParams) (*quickbooks.Connector, error) {
+	return quickbooks.NewSandboxConnector(params)
+}
+
 func newDropboxSignConnector(params common.ConnectorParams) (*dropboxsign.Connector, error) {
 	return dropboxsign.NewConnector(params)
+}
+
+func newSuperSendConnector(params common.ConnectorParams) (*supersend.Connector, error) {
+	return supersend.NewConnector(params)
+}
+
+func newSurveyMonkeyConnector(params common.ConnectorParams) (*surveymonkey.Connector, error) {
+	return surveymonkey.NewConnector(params)
 }
 
 func newCallRail(params common.ConnectorParams) (*callrail.Connector, error) {
@@ -1123,4 +1294,28 @@ func newFourFourConnector(params common.ConnectorParams) (*fourfour.Connector, e
 
 func newChargeOver(params common.ConnectorParams) (*chargeover.Connector, error) {
 	return chargeover.NewConnector(params)
+}
+
+func newProcoreConnector(params common.ConnectorParams) (*procore.Connector, error) {
+	return procore.NewConnector(params)
+}
+
+func newProcoreSandboxConnector(params common.ConnectorParams) (*procore.Connector, error) {
+	return procore.NewSandboxConnector(params)
+}
+
+func newGoToConnector(params common.ConnectorParams) (*gotoconn.Connector, error) {
+	return gotoconn.NewConnector(params)
+}
+
+func newSquareConnector(params common.ConnectorParams) (*square.Connector, error) {
+	return square.NewConnector(params)
+}
+
+func newSquareSandboxConnector(params common.ConnectorParams) (*square.Connector, error) {
+	return square.NewSandboxConnector(params)
+}
+
+func newZoomInfoConnector(params common.ConnectorParams) (*zoominfo.Connector, error) {
+	return zoominfo.NewConnector(params)
 }

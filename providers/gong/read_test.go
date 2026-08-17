@@ -11,7 +11,7 @@ import (
 	"github.com/amp-labs/connectors/test/utils/mockutils"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockcond"
 	"github.com/amp-labs/connectors/test/utils/mockutils/mockserver"
-	"github.com/amp-labs/connectors/test/utils/testroutines"
+	"github.com/amp-labs/connectors/test/utils/testconn"
 	"github.com/amp-labs/connectors/test/utils/testutils"
 )
 
@@ -23,7 +23,7 @@ func TestRead(t *testing.T) { //nolint:funlen,gocognit,cyclop
 	fakeServerResp2 := testutils.DataFromFile(t, "read_cursor.json")
 	responseTranscripts := testutils.DataFromFile(t, "read_transcripts.json")
 
-	tests := []testroutines.Read{
+	tests := []testconn.TestCaseRead{
 		{
 			Name:         "Read object must be included",
 			Server:       mockserver.Dummy(),
@@ -109,7 +109,43 @@ func TestRead(t *testing.T) { //nolint:funlen,gocognit,cyclop
 				If:   mockcond.Body(`{"filter":{"fromDateTime":"2024-09-19T12:30:45Z"},"contentSelector":{"context":"Extended","exposedFields":{"parties":true, "media": true}}}`),
 				Then: mockserver.Response(http.StatusOK, fakeServerResp),
 			}.Server(),
-			Comparator:   testroutines.ComparatorPagination,
+			Comparator:   testconn.ComparatorPagination,
+			Expected:     &common.ReadResult{Rows: 2, NextPage: "", Done: true},
+			ExpectedErrs: nil,
+		},
+		{
+			Name: "Requesting the content field opts only that section into exposedFields",
+			Input: common.ReadParams{
+				ObjectName: "calls",
+				Fields:     connectors.Fields("id", "content"),
+			},
+			Server: mockserver.Conditional{
+				Setup: mockserver.ContentJSON(),
+				If: mockcond.Body(`{
+					"filter":{},
+					"contentSelector":{
+						"context":"Extended",
+						"exposedFields":{
+							"parties":true,
+							"media":true,
+							"content":{
+								"structure":true,
+								"topics":true,
+								"trackers":true,
+								"trackerOccurrences":true,
+								"pointsOfInterest":true,
+								"brief":true,
+								"outline":true,
+								"highlights":true,
+								"callOutcome":true,
+								"keyPoints":true
+							}
+						}
+					}
+				}`),
+				Then: mockserver.Response(http.StatusOK, fakeServerResp),
+			}.Server(),
+			Comparator:   testconn.ComparatorPagination,
 			Expected:     &common.ReadResult{Rows: 2, NextPage: "", Done: true},
 			ExpectedErrs: nil,
 		},
@@ -215,6 +251,240 @@ func TestRead(t *testing.T) { //nolint:funlen,gocognit,cyclop
 		},
 
 		{
+			Name: "Flows: no users returns empty result",
+			Input: common.ReadParams{
+				ObjectName: "flows",
+				Fields:     connectors.Fields("id", "name"),
+			},
+			Server: mockserver.Switch{
+				Setup: mockserver.ContentJSON(),
+				Cases: []mockserver.Case{{
+					If: mockcond.Path("/v2/users"),
+					Then: mockserver.ResponseString(http.StatusOK, `{
+						"requestId": "noUsers",
+						"records": {"totalRecords": 0, "currentPageSize": 0, "currentPageNumber": 0},
+						"users": []
+					}`),
+				}},
+			}.Server(),
+			Expected:     &common.ReadResult{Done: true, Rows: 0, Data: nil},
+			ExpectedErrs: nil,
+		},
+		{
+			// ReadFlowsForAllUsers is true, so we read every active user's flows.
+			// Bob is fetched first (read_users_bob_first.json) and his result set
+			// includes alice's flow 9000000000000001 as "Shared", because Gong
+			// reports visibility relative to the queried email. Alice is fetched
+			// second and sees that same id as "Personal". Flow ...001 comes out
+			// "Personal" (the owner's copy wins) with BOTH alice (owner) and bob
+			// (shared) attached, proving we accumulate every user a flow shows up for.
+			Name: "Flows: ReadFlowsForAllUsers attaches the owner and shared users to each flow",
+			Input: common.ReadParams{
+				ObjectName:        "flows",
+				Fields:            connectors.Fields("id", "name", "visibility"),
+				AssociatedObjects: []string{"users"},
+				Opts:              ReadParamsOpts{ReadFlowsForAllUsers: true},
+			},
+			Server: mockserver.Switch{
+				Setup: mockserver.ContentJSON(),
+				Cases: []mockserver.Case{{
+					If:   mockcond.Path("/v2/users"),
+					Then: mockserver.Response(http.StatusOK, testutils.DataFromFile(t, "read_users_bob_first.json")),
+				}, {
+					If: mockcond.And{
+						mockcond.Path("/v2/flows"),
+						mockcond.QueryParam("flowOwnerEmail", "alice@example.com"),
+					},
+					Then: mockserver.Response(http.StatusOK, testutils.DataFromFile(t, "read_flows_alice.json")),
+				}, {
+					If: mockcond.And{
+						mockcond.Path("/v2/flows"),
+						mockcond.QueryParam("flowOwnerEmail", "bob@example.com"),
+					},
+					Then: mockserver.Response(http.StatusOK, testutils.DataFromFile(t, "read_flows_bob.json")),
+				}},
+			}.Server(),
+			Comparator: testconn.ComparatorSubsetRead,
+			Expected: &common.ReadResult{
+				Rows: 3,
+				Data: []common.ReadResultRow{{
+					Id: "9000000000000001",
+					Fields: map[string]any{
+						"visibility": "Personal",
+						"id":         "9000000000000001",
+					},
+					Raw: map[string]any{
+						"visibility": "Personal",
+						"id":         "9000000000000001",
+					},
+					// alice owns it (Personal) and bob has it Shared, so both are attached.
+					Associations: map[string][]common.Association{
+						"users": {{
+							ObjectId: "8000000000000001",
+							Raw: map[string]any{
+								"emailAddress": "alice@example.com",
+							},
+						}, {
+							ObjectId: "8000000000000002",
+							Raw: map[string]any{
+								"emailAddress": "bob@example.com",
+							},
+						}},
+					},
+				}, {
+					Id: "9000000000000002",
+					Fields: map[string]any{
+						"visibility": "Personal",
+						"id":         "9000000000000002",
+					},
+					Raw: map[string]any{
+						"visibility": "Personal",
+						"id":         "9000000000000002",
+					},
+					Associations: map[string][]common.Association{
+						"users": {{
+							ObjectId: "8000000000000002",
+							Raw: map[string]any{
+								"id":           "8000000000000002",
+								"emailAddress": "bob@example.com",
+								"firstName":    "Bob",
+								"lastName":     "Brown",
+								"active":       true,
+								"title":        "Sales Engineer",
+							},
+						}},
+					},
+				}, {
+					Id: "9000000000000099",
+					Fields: map[string]any{
+						"id":         "9000000000000099",
+						"visibility": "Company",
+					},
+					Raw: map[string]any{
+						"id":         "9000000000000099",
+						"visibility": "Company",
+					},
+					// Company flows: no user association.
+				}},
+				Done: true,
+			},
+			ExpectedErrs: nil,
+		},
+		{
+			// ReadFlowsForAllUsers is true, so users are read across every page
+			// and each page's users get their flows fetched.
+			Name: "Flows: ReadFlowsForAllUsers follows the users cursor across pages",
+			Input: common.ReadParams{
+				ObjectName: "flows",
+				Fields:     connectors.Fields("id", "name", "visibility"),
+				Opts:       ReadParamsOpts{ReadFlowsForAllUsers: true},
+			},
+			Server: mockserver.Switch{
+				Setup: mockserver.ContentJSON(),
+				Cases: []mockserver.Case{{
+					// users page 2 (cursor present) must be matched before the page 1 fallback
+					If: mockcond.And{
+						mockcond.Path("/v2/users"),
+						mockcond.QueryParam("cursor", "USERS_PAGE_2"),
+					},
+					Then: mockserver.Response(http.StatusOK, testutils.DataFromFile(t, "read_users_page2.json")),
+				}, {
+					If:   mockcond.Path("/v2/users"),
+					Then: mockserver.Response(http.StatusOK, testutils.DataFromFile(t, "read_users_page1.json")),
+				}, {
+					If: mockcond.And{
+						mockcond.Path("/v2/flows"),
+						mockcond.QueryParam("flowOwnerEmail", "alice@example.com"),
+					},
+					Then: mockserver.Response(http.StatusOK, testutils.DataFromFile(t, "read_flows_alice.json")),
+				}, {
+					If: mockcond.And{
+						mockcond.Path("/v2/flows"),
+						mockcond.QueryParam("flowOwnerEmail", "bob@example.com"),
+					},
+					Then: mockserver.Response(http.StatusOK, testutils.DataFromFile(t, "read_flows_bob.json")),
+				}},
+			}.Server(),
+			Comparator: testconn.ComparatorSubsetRead,
+			Expected: &common.ReadResult{
+				Rows: 3,
+				Data: []common.ReadResultRow{{
+					Id: "9000000000000001",
+					Fields: map[string]any{
+						"id":         "9000000000000001",
+						"visibility": "Personal",
+					},
+					Raw: map[string]any{
+						"id":         "9000000000000001",
+						"visibility": "Personal",
+					},
+				}, {
+					// bob lives on users page 2 — proves we followed the users cursor
+					Id: "9000000000000002",
+					Fields: map[string]any{
+						"id":         "9000000000000002",
+						"visibility": "Personal",
+					},
+					Raw: map[string]any{
+						"id":         "9000000000000002",
+						"visibility": "Personal",
+					},
+				}, {
+					Id: "9000000000000099",
+					Fields: map[string]any{
+						"id":         "9000000000000099",
+						"visibility": "Company",
+					},
+					Raw: map[string]any{
+						"id":         "9000000000000099",
+						"visibility": "Company",
+					},
+				}},
+				Done: true,
+			},
+			ExpectedErrs: nil,
+		},
+		{
+			// ReadFlowsForAllUsers is false (the default). We read only the first
+			// active user's flows and keep just the "Company" visibility ones, so
+			// alice's Personal flow is dropped and only the Company flow remains.
+			Name: "Flows: company-only mode reads one user and returns only Company flows",
+			Input: common.ReadParams{
+				ObjectName: "flows",
+				Fields:     connectors.Fields("id", "name", "visibility"),
+			},
+			Server: mockserver.Switch{
+				Setup: mockserver.ContentJSON(),
+				Cases: []mockserver.Case{{
+					If: mockcond.And{
+						mockcond.Path("/v2/flows"),
+						mockcond.QueryParam("flowOwnerEmail", "alice@example.com"),
+					},
+					Then: mockserver.Response(http.StatusOK, testutils.DataFromFile(t, "read_flows_alice.json")),
+				}, {
+					If:   mockcond.Path("/v2/users"),
+					Then: mockserver.Response(http.StatusOK, testutils.DataFromFile(t, "read_users_alice_only.json")),
+				}},
+			}.Server(),
+			Comparator: testconn.ComparatorSubsetRead,
+			Expected: &common.ReadResult{
+				Rows: 1,
+				Data: []common.ReadResultRow{{
+					Id: "9000000000000099",
+					Fields: map[string]any{
+						"id":         "9000000000000099",
+						"visibility": "Company",
+					},
+					Raw: map[string]any{
+						"id":         "9000000000000099",
+						"visibility": "Company",
+					},
+				}},
+				Done: true,
+			},
+			ExpectedErrs: nil,
+		},
+		{
 			Name:  "Successful read transcripts using POST",
 			Input: common.ReadParams{ObjectName: "transcripts", Fields: connectors.Fields("callid")},
 			Server: mockserver.Conditional{
@@ -222,7 +492,7 @@ func TestRead(t *testing.T) { //nolint:funlen,gocognit,cyclop
 				If:    mockcond.Path("/v2/calls/transcript"),
 				Then:  mockserver.Response(http.StatusOK, responseTranscripts),
 			}.Server(),
-			Comparator: testroutines.ComparatorSubsetRead,
+			Comparator: testconn.ComparatorSubsetRead,
 			Expected: &common.ReadResult{
 				Rows: 1,
 				Data: []common.ReadResultRow{{
@@ -246,7 +516,7 @@ func TestRead(t *testing.T) { //nolint:funlen,gocognit,cyclop
 		t.Run(tt.Name, func(t *testing.T) {
 			t.Parallel()
 
-			tt.Run(t, func() (connectors.ReadConnector, error) {
+			tt.Run(t, func() (testconn.TestableReader, error) {
 				return constructTestConnector(tt.Server.URL)
 			})
 		})
@@ -256,6 +526,7 @@ func TestRead(t *testing.T) { //nolint:funlen,gocognit,cyclop
 func constructTestConnector(serverURL string) (*Connector, error) {
 	connector, err := NewConnector(
 		WithAuthenticatedClient(mockutils.NewClient()),
+		WithWorkspace("https://api.gong.io"), // full URL required; setBaseURL below overrides origin for tests
 	)
 	if err != nil {
 		return nil, err
