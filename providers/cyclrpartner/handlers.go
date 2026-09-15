@@ -143,7 +143,8 @@ func (c *Connector) buildWriteRequest(ctx context.Context, params common.WritePa
 	switch {
 	case strings.HasSuffix(params.ObjectName, ":"+pathSegmentSuspend),
 		strings.HasSuffix(params.ObjectName, ":"+pathSegmentResume):
-		return nil, fmt.Errorf("%w: %s — Cyclr does not expose a Partner suspend/resume endpoint at the assumed path; see providers/cyclrpartner/objects.go",
+		return nil, fmt.Errorf("%w: %s — Cyclr does not expose a Partner suspend/resume endpoint at the assumed path; "+
+			"see providers/cyclrpartner/objects.go",
 			common.ErrOperationNotSupportedForObject, params.ObjectName)
 	}
 

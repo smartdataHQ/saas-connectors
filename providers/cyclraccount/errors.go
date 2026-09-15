@@ -17,6 +17,8 @@ import (
 // counterpart to cyclrpartner.ErrScopeMismatch). Surfaced per FR-005.
 var ErrScopeMismatch = errors.New("credential scope does not match endpoint")
 
+var errCannotCoerce = errors.New("cannot coerce")
+
 // errorFormats matches Cyclr's .NET WebAPI JSON error bodies; shape is
 // identical across both Partner and Account scopes (research §6).
 //

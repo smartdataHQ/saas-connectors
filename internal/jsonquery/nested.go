@@ -61,6 +61,10 @@ func (q *Query) zoomIn(isUnwrap bool) (*ajson.Node, error) {
 
 	// traverse nested JSON, use every key to zoom in
 	for _, key := range q.zoom {
+		if node.IsNull() {
+			return node, nil
+		}
+
 		if !node.IsObject() {
 			return nil, fmt.Errorf("%w: at key %v", ErrNotObject, key)
 		}
@@ -77,7 +81,7 @@ func (q *Query) zoomIn(isUnwrap bool) (*ajson.Node, error) {
 		}
 	}
 
-	if isUnwrap {
+	if isUnwrap || node.IsNull() {
 		// The query is asking to get current node.
 		// The outer method will assert the node type.
 		// This acts as "unwrapping" current node into some JSON type defined by outer method.
@@ -109,14 +113,13 @@ func (q *Query) getInnerKey(targetKey string, optional bool) (*ajson.Node, error
 		return nil, err
 	}
 
+	if zoomed.IsNull() {
+		return nil, handleNullNode(targetKey, optional)
+	}
+
 	// Empty key means we are referencing current node.
 	if isUnwrap {
-		targetNode := zoomed
-		if targetNode.IsNull() {
-			return nil, handleNullNode(targetKey, optional)
-		}
-
-		return targetNode, nil
+		return zoomed, nil
 	}
 
 	if !zoomed.HasKey(targetKey) {
