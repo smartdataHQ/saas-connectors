@@ -109,8 +109,10 @@ func (c *Connector) readURLForObject(objectName string) (*urlbuilder.URL, error)
 //
 //	matchParentScoped("cycles/abc/steps", "cycles", "steps") → "abc", true
 func matchParentScoped(objectName, parent, child string) (string, bool) {
+	const pathSegments = 3
+
 	segments := strings.Split(objectName, "/")
-	if len(segments) != 3 {
+	if len(segments) != pathSegments {
 		return "", false
 	}
 
@@ -238,6 +240,13 @@ func (c *Connector) buildWriteRequest(ctx context.Context, params common.WritePa
 		return c.buildCycleActivateRequest(ctx, params)
 	case strings.HasSuffix(params.ObjectName, ":"+pathSegmentDeactivate):
 		return c.buildCycleActionRequest(ctx, params, pathSegmentDeactivate, nil)
+	}
+
+	return c.buildObjectWriteRequest(ctx, params)
+}
+
+func (c *Connector) buildObjectWriteRequest(ctx context.Context, params common.WriteParams) (*http.Request, error) {
+	switch {
 	case params.ObjectName == objectNameCycles && params.RecordId == "":
 		return c.buildInstallFromTemplateRequest(ctx, params)
 	case params.ObjectName == objectNameStepParameters && params.RecordId != "":
@@ -359,6 +368,7 @@ func (c *Connector) buildStepInputUpdateRequest(
 	// else we don't recognise. This keeps the wire payload stable and keeps
 	// arbitrary fields from leaking into error context (FR-039).
 	body := map[string]any{}
+
 	for _, key := range []string{
 		payloadKeyMappingType,
 		payloadKeyValue,
@@ -410,6 +420,7 @@ func (c *Connector) buildAccountConnectorInstallRequest(
 	}
 
 	body := map[string]any{}
+
 	for _, key := range []string{payloadKeyName, payloadKeyDescription, payloadKeyAuthValue} {
 		if v, ok := record[key]; ok && v != nil {
 			body[key] = v
@@ -441,7 +452,7 @@ func (c *Connector) buildAccountConnectorInstallRequest(
 // buildActivatePayload — see earlier version. Extracts only activate-relevant
 // fields and validates Interval against the closed allowed set.
 func buildActivatePayload(data any) (map[string]any, error) {
-	payload := make(map[string]any, 3)
+	payload := make(map[string]any)
 
 	record, err := recordDataAsMap(data)
 	if err != nil {
@@ -575,30 +586,30 @@ func extractStringField(data any, key string) (string, error) {
 }
 
 func coerceInt(value any) (int, error) {
-	switch v := value.(type) {
+	switch typedValue := value.(type) {
 	case int:
-		return v, nil
+		return typedValue, nil
 	case int32:
-		return int(v), nil
+		return int(typedValue), nil
 	case int64:
-		return int(v), nil
+		return int(typedValue), nil
 	case float64:
-		return int(v), nil
+		return int(typedValue), nil
 	case json.Number:
-		n, err := v.Int64()
+		n, err := typedValue.Int64()
 		if err != nil {
 			return 0, err
 		}
 
 		return int(n), nil
 	case string:
-		n, err := strconv.Atoi(v)
+		n, err := strconv.Atoi(typedValue)
 		if err != nil {
 			return 0, err
 		}
 
 		return n, nil
 	default:
-		return 0, fmt.Errorf("cannot coerce %T to int", value)
+		return 0, fmt.Errorf("%w %T to int", errCannotCoerce, value)
 	}
 }
